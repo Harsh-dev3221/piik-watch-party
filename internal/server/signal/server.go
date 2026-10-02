@@ -200,8 +200,8 @@ type Server struct {
 	// pausedShareGenerationsByRoom).
 	shares                      map[string]roomShare
 	deferredViewerPresenceRooms map[string]struct{}
-	// stages holds stage requests per room and Viewer peer id.
-	stages map[string]map[string]stageEntry
+	// stages holds the watch-party camera state per room.
+	stages map[string]*roomStage
 
 	heartbeatStop func() bool
 	closing       bool
@@ -245,7 +245,7 @@ func New(options Options) (*Server, error) {
 		viewerQualityEvidenceAttempts: map[string]viewerQualityEvidenceAttempt{},
 		senderQualityRateBySession:    map[string]*senderQualityRateWindow{},
 		shares:                        map[string]roomShare{},
-		stages:                        map[string]map[string]stageEntry{},
+		stages:                        map[string]*roomStage{},
 		deferredViewerPresenceRooms:   map[string]struct{}{},
 	}
 	if s.maxConnections <= 0 || s.maxUnauthenticatedConnections <= 0 ||
@@ -1319,12 +1319,10 @@ func (s *Server) handleAuthenticatedMessage(sess *session, authenticated *authen
 		s.router.setPaused(authenticated.roomID, m.Paused)
 		s.broadcastHostStatus(authenticated.roomID, true, m.Paused)
 	case protocol.StartSharingMessage:
-		if authenticated.role == protocol.RoleHost {
-			s.clearStage(authenticated.roomID)
-		}
 		s.startSharing(sess, authenticated, m)
 	case protocol.StageRequestMessage, protocol.StageLeaveMessage, protocol.StageDecisionMessage,
-		protocol.StageRemoveMessage, protocol.ClientStageSignalMessage:
+		protocol.StageRemoveMessage, protocol.ClientStageSignalMessage, protocol.StagePublishMessage,
+		protocol.StageSyncMessage:
 		s.handleStageMessage(sess, authenticated, m)
 	case protocol.StopSharingMessage:
 		if authenticated.role != protocol.RoleHost {

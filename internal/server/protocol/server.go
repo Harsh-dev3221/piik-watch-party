@@ -255,6 +255,8 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		return decodeServerStageState(data)
 	case "stage-signal":
 		return decodeServerStageSignal(data)
+	case "stage-roster":
+		return decodeServerStageRoster(data)
 	case "room-interactions-ready":
 		return decodeRoomInteractionsReady(data)
 	case "room-interaction":

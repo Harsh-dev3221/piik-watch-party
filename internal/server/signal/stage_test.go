@@ -2,6 +2,7 @@ package signal
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -12,14 +13,33 @@ func stageCandidateSignal(connectionID string) map[string]any {
 	return map[string]any{"kind": "candidate", "connectionId": connectionID, "candidate": nil}
 }
 
-func TestStageRequestAcceptSignalAndLimit(t *testing.T) {
+func expectRoster(t *testing.T, client *testClient, publishers ...string) {
+	t.Helper()
+	raw := client.next("stage-roster").raw
+	var message struct {
+		Publishers []string `json:"publishers"`
+	}
+	if err := json.Unmarshal(raw, &message); err != nil {
+		t.Fatalf("bad stage-roster %s: %v", raw, err)
+	}
+	if len(message.Publishers) != len(publishers) {
+		t.Fatalf("roster %v, want %v", message.Publishers, publishers)
+	}
+	for index := range publishers {
+		if message.Publishers[index] != publishers[index] {
+			t.Fatalf("roster %v, want %v", message.Publishers, publishers)
+		}
+	}
+}
+
+func TestStageWatchPartyRosterAndSignals(t *testing.T) {
 	h := startHarness(t, harnessOptions{maxViewersPerRoom: 5})
 	host := openClient(t, h)
 	hostAuth := authenticate(t, host, h.room, protocol.RoleHost, "stage-host", 1,
 		"stage_share_generation_12345678", presenceOptions{displayName: "Host", viewerPresence: true, roomSession: true})
-	host.ignore("route-update")
-	host.ignore("viewer-presence")
-	host.ignore("signal")
+	for _, typ := range []string{"route-update", "viewer-presence", "signal"} {
+		host.ignore(typ)
+	}
 
 	viewers := make([]*testClient, 3)
 	peerIDs := make([]string, 3)
@@ -27,22 +47,40 @@ func TestStageRequestAcceptSignalAndLimit(t *testing.T) {
 		viewers[index] = openClient(t, h)
 		auth := authenticate(t, viewers[index], h.room, protocol.RoleViewer, "stage-viewer-"+string(rune('a'+index)), 1, "",
 			presenceOptions{displayName: "Viewer", viewerPresence: true})
-		viewers[index].ignore("route-update")
-		viewers[index].ignore("viewer-presence")
-		viewers[index].ignore("signal")
-		viewers[index].ignore("host-status")
+		for _, typ := range []string{"route-update", "viewer-presence", "signal", "host-status"} {
+			viewers[index].ignore(typ)
+		}
 		peerIDs[index] = auth.PeerID
 	}
+	everyone := append([]*testClient{host}, viewers...)
 
-	// A Viewer that was never accepted cannot signal the Host.
-	viewers[0].sendJSON(map[string]any{"type": "stage-signal", "payload": stageCandidateSignal("stage_connection_0001")})
-	host.expectNone(80 * time.Millisecond)
+	// Nobody is on camera: no camera links at all.
+	viewers[0].sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[1], "payload": stageCandidateSignal("stage_connection_0001")})
+	viewers[1].expectNone(80 * time.Millisecond)
+	viewers[0].sendJSON(map[string]any{"type": "stage-sync"})
+	expectRoster(t, viewers[0])
 
-	// Viewers cannot decide; the Host cannot request.
+	// Only the Host decides and publishes without asking; the Host never asks.
 	viewers[0].sendJSON(map[string]any{"type": "stage-decision", "peerId": peerIDs[1], "accept": true})
+	viewers[0].next("error")
+	viewers[0].sendJSON(map[string]any{"type": "stage-publish", "enabled": true})
 	viewers[0].next("error")
 	host.sendJSON(map[string]any{"type": "stage-request"})
 	host.next("error")
+
+	// The Host turns its camera on: everyone learns the roster.
+	host.sendJSON(map[string]any{"type": "stage-publish", "enabled": true})
+	for _, client := range everyone {
+		expectRoster(t, client, hostAuth.PeerID)
+	}
+	// A Viewer may now link to the Host's camera and back.
+	viewers[2].sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": hostAuth.PeerID, "payload": stageCandidateSignal("stage_connection_0003")})
+	forwarded := host.next("stage-signal")
+	if !bytes.Contains(forwarded.raw, []byte(`"fromPeerId":"`+peerIDs[2]+`"`)) {
+		t.Fatalf("stage-signal lost its sender: %s", forwarded.raw)
+	}
+	host.sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[2], "payload": stageCandidateSignal("stage_connection_0003")})
+	viewers[2].next("stage-signal")
 
 	for index := range viewers {
 		viewers[index].sendJSON(map[string]any{"type": "stage-request"})
@@ -51,81 +89,53 @@ func TestStageRequestAcceptSignalAndLimit(t *testing.T) {
 			t.Fatalf("stage-request names the wrong peer: %s", request.raw)
 		}
 	}
-	// A repeated request while pending is not forwarded again.
 	viewers[0].sendJSON(map[string]any{"type": "stage-request"})
 	host.expectNone(80 * time.Millisecond)
 
-	for index := range viewers {
-		host.sendJSON(map[string]any{"type": "stage-decision", "peerId": peerIDs[index], "accept": true})
-	}
+	host.sendJSON(map[string]any{"type": "stage-decision", "peerId": peerIDs[0], "accept": true})
 	expectEqual(t, viewers[0].next("stage-state").raw, `{"type":"stage-state","state":"accepted"}`)
+	for _, client := range everyone {
+		expectRoster(t, client, hostAuth.PeerID, peerIDs[0])
+	}
+	host.sendJSON(map[string]any{"type": "stage-decision", "peerId": peerIDs[1], "accept": true})
 	expectEqual(t, viewers[1].next("stage-state").raw, `{"type":"stage-state","state":"accepted"}`)
-	// Only MaxStagePeers Viewers fit on stage.
+	for _, client := range everyone {
+		expectRoster(t, client, hostAuth.PeerID, peerIDs[0], peerIDs[1])
+	}
+	// The Host's own camera does not use a guest slot; two guests fill it.
+	host.sendJSON(map[string]any{"type": "stage-decision", "peerId": peerIDs[2], "accept": true})
 	expectEqual(t, viewers[2].next("stage-state").raw, `{"type":"stage-state","state":"declined"}`)
 
-	// Accepted Viewer -> Host, and Host -> that Viewer only.
-	viewers[0].sendJSON(map[string]any{"type": "stage-signal", "payload": stageCandidateSignal("stage_connection_0001")})
-	forwarded := host.next("stage-signal")
-	if !bytes.Contains(forwarded.raw, []byte(`"fromPeerId":"`+peerIDs[0]+`"`)) {
-		t.Fatalf("stage-signal lost its sender: %s", forwarded.raw)
-	}
-	host.sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[0], "payload": stageCandidateSignal("stage_connection_0001")})
+	// A guest links to a plain Viewer, who answers back.
+	viewers[0].sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[2], "payload": stageCandidateSignal("stage_connection_0013")})
+	viewers[2].next("stage-signal")
+	viewers[2].sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[0], "payload": stageCandidateSignal("stage_connection_0013")})
 	viewers[0].next("stage-signal")
-	viewers[1].expectNone(80 * time.Millisecond)
-	// The declined Viewer is not a valid target.
-	host.sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[2], "payload": stageCandidateSignal("stage_connection_0003")})
-	viewers[2].expectNone(80 * time.Millisecond)
+	// A signal needs a target other than the sender.
+	viewers[2].sendJSON(map[string]any{"type": "stage-signal", "payload": stageCandidateSignal("stage_connection_0013")})
+	viewers[2].next("error")
 
-	// Leaving frees the slot and tells the Host.
+	// Leaving and removal update everyone's roster.
 	viewers[1].sendJSON(map[string]any{"type": "stage-leave"})
-	left := host.next("stage-left")
-	if !bytes.Contains(left.raw, []byte(peerIDs[1])) {
-		t.Fatalf("stage-left names the wrong peer: %s", left.raw)
+	host.next("stage-left")
+	for _, client := range everyone {
+		expectRoster(t, client, hostAuth.PeerID, peerIDs[0])
 	}
-	viewers[2].sendJSON(map[string]any{"type": "stage-request"})
-	host.next("stage-request")
-	host.sendJSON(map[string]any{"type": "stage-decision", "peerId": peerIDs[2], "accept": true})
-	expectEqual(t, viewers[2].next("stage-state").raw, `{"type":"stage-state","state":"accepted"}`)
-
-	// Removal ends signaling for that Viewer.
 	host.sendJSON(map[string]any{"type": "stage-remove", "peerId": peerIDs[0]})
 	expectEqual(t, viewers[0].next("stage-state").raw, `{"type":"stage-state","state":"removed"}`)
-	viewers[0].sendJSON(map[string]any{"type": "stage-signal", "payload": stageCandidateSignal("stage_connection_0001")})
-	host.expectNone(80 * time.Millisecond)
-
-	// Stopping the share clears the stage.
-	host.sendJSON(map[string]any{"type": "stop-sharing", "shareGeneration": hostAuth.ShareGeneration})
-	viewers[2].next("sharing-stopped")
-	viewers[2].sendJSON(map[string]any{"type": "stage-signal", "payload": stageCandidateSignal("stage_connection_0003")})
-	host.expectNone(80 * time.Millisecond)
+	for _, client := range everyone {
+		expectRoster(t, client, hostAuth.PeerID)
+	}
+	host.sendJSON(map[string]any{"type": "stage-publish", "enabled": false})
+	for _, client := range everyone {
+		expectRoster(t, client)
+	}
+	// With nobody on camera again, Viewers cannot link to each other.
+	viewers[0].sendJSON(map[string]any{"type": "stage-signal", "targetPeerId": peerIDs[2], "payload": stageCandidateSignal("stage_connection_0013")})
+	viewers[2].expectNone(80 * time.Millisecond)
 
 	for _, viewer := range viewers {
 		h.closeClient(viewer)
 	}
-	h.closeClient(host)
-}
-
-func TestStageRequestWithoutShareIsDeclined(t *testing.T) {
-	h := startHarness(t, harnessOptions{maxViewersPerRoom: 2})
-	host := openClient(t, h)
-	hostAuth := authenticate(t, host, h.room, protocol.RoleHost, "idle-stage-host", 1,
-		"idle_share_generation_12345678", presenceOptions{displayName: "Host", viewerPresence: true, roomSession: true})
-	host.ignore("route-update")
-	host.ignore("viewer-presence")
-	viewer := openClient(t, h)
-	authenticate(t, viewer, h.room, protocol.RoleViewer, "idle-stage-viewer", 1, "",
-		presenceOptions{displayName: "Viewer", viewerPresence: true})
-	viewer.ignore("route-update")
-	viewer.ignore("viewer-presence")
-	viewer.ignore("signal")
-	host.ignore("signal")
-	host.sendJSON(map[string]any{"type": "stop-sharing", "shareGeneration": hostAuth.ShareGeneration})
-	viewer.next("sharing-stopped")
-	viewer.ignore("host-status")
-
-	viewer.sendJSON(map[string]any{"type": "stage-request"})
-	expectEqual(t, viewer.next("stage-state").raw, `{"type":"stage-state","state":"declined"}`)
-	host.expectNone(80 * time.Millisecond)
-	h.closeClient(viewer)
 	h.closeClient(host)
 }

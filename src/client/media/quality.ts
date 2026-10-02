@@ -9,10 +9,9 @@ import {
 import { say, type CopyKey } from "../ui/copy";
 import type { MediaFailure } from "../ui/media-failure";
 import { displayMediaOptions } from "./audio-capture";
-import { browserDebugEnabled, debugError, debugOperation } from "../lib/debug";
+import { browserDebugEnabled, debugOperation } from "../lib/debug";
 import { debugTrack } from "../lib/debug-webrtc";
 import { applySenderCaptureConstraints, senderCaptureTrack } from "./sender-video-track";
-import { cameraOverlaySupported, StageCompositor, stageScreenTrack } from "./camera-overlay";
 
 export type {
   DegradationPreference,
@@ -223,38 +222,12 @@ export async function captureDisplay(profile: QualityProfile): Promise<MediaStre
 
 export type BrowserCaptureSource = "browser" | "camera";
 
-export async function captureBrowserSource(
-  profile: QualityProfile,
-  source: BrowserCaptureSource,
-  deviceId = "",
-): Promise<MediaStream> {
-  if (source === "camera") {
-    const resolution = QUALITY_RESOLUTIONS[profile.resolution];
-    return captureCamera(profile, deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } },
-      resolution.width, resolution.height);
-  }
-  // The display picker must stay the first await in the button gesture.
-  const screen = await captureDisplay(profile);
-  if (!cameraOverlaySupported()) return screen;
-  // Screen shares always go through the compositor so camera boxes can be
-  // added, moved and removed later without replacing the shared track.
-  try {
-    return new StageCompositor(screen, profile.maxFramerate).stream;
-  } catch (error) {
-    debugError("capture", "camera-overlay-unavailable", error);
-    return screen;
-  }
-}
-
-async function captureCamera(
-  profile: QualityProfile,
-  device: MediaTrackConstraints,
-  width: number,
-  height: number,
-): Promise<MediaStream> {
+export async function captureBrowserSource(profile: QualityProfile, source: BrowserCaptureSource, deviceId = ""): Promise<MediaStream> {
+  if (source !== "camera") return captureDisplay(profile);
+  const resolution = QUALITY_RESOLUTIONS[profile.resolution];
   const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-    ...device,
-    width: { ideal: width }, height: { ideal: height },
+    ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
+    width: { ideal: resolution.width }, height: { ideal: resolution.height },
     frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
   } });
   const track = stream.getVideoTracks()[0];
@@ -281,7 +254,6 @@ export async function applyVideoCaptureProfile(
   track: MediaStreamTrack,
   profile: QualityProfile,
 ): Promise<void> {
-  track = stageScreenTrack(track);
   if (!videoTrackOwnsCaptureConstraints(track)) {
     return;
   }
@@ -297,7 +269,7 @@ export async function applyVideoCaptureProfile(
 }
 
 function videoTrackOwnsCaptureConstraints(track: MediaStreamTrack): boolean {
-  track = senderCaptureTrack(stageScreenTrack(track));
+  track = senderCaptureTrack(track);
   const capabilities = track.getCapabilities?.();
   return !capabilities ||
     "width" in capabilities ||

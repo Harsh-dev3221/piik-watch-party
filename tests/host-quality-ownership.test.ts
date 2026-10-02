@@ -70,7 +70,6 @@ function fixture(launchedByClient = true) {
   const route = { updateProfile: vi.fn(async () => true), resyncAuthoritative: vi.fn(async (): Promise<void> => undefined) };
   const state = {
     debugError, debugEvent, debugOperation, NativeCompatibilityError, NativeMediaBridgeError, isCapturePermissionFailure, DOMException,
-    hostCameraWantedRef: { current: false },
     launchedByClient, hostRoomSessionAvailable: false,
     NativeClient: { connect: vi.fn(async (): Promise<typeof client | null> => null) },
     nativeClientConnectRef: ref<Promise<typeof client | null> | null>(null),

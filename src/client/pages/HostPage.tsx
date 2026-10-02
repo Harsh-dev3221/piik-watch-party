@@ -116,18 +116,8 @@ import {
   type SignalingTerminationReason,
 } from "../lib/signaling";
 import { labelParticipantSnapshot } from "../lib/viewer-presence";
-import {
-  cameraOverlaySupported,
-  captureStageCamera,
-  readBrowserCameraPreference,
-  readHostCameraLayout,
-  stageCompositorFor,
-  writeBrowserCameraPreference,
-  writeHostCameraLayout,
-} from "../media/camera-overlay";
-import { StageLayoutEditor, useStageSlots } from "../components/living/StageLayoutEditor";
-import { HostStagePanel } from "../components/living/StagePanels";
-import { StageHost } from "../media/stage-host";
+import { CameraStrip, HostStagePanel, StageSelfControls, type StageSelfState } from "../components/living/StagePanels";
+import { StageMesh } from "../media/stage-mesh";
 import {
   applyCaptureProfile,
   captureBrowserSource,
@@ -356,7 +346,7 @@ interface HostPageProps {
 }
 
 type ShareSourceSelection =
-  | { kind: "browser"; source?: BrowserCaptureSource; deviceId?: string; withCamera?: boolean }
+  | { kind: "browser"; source?: BrowserCaptureSource; deviceId?: string }
   | {
       kind: "native";
       client: NativeClient;
@@ -407,8 +397,6 @@ export function HostPage({
   const [interactionSession, setInteractionSession] = useState<RoomInteractionSession | null>(null);
   const [microphoneVolume, setMicrophoneVolume] = useState(1);
   const [microphonePending, setMicrophonePending] = useState(false);
-  const [hostCameraPending, setHostCameraPending] = useState(false);
-  const hostCameraWantedRef = useRef(false);
   const [microphoneDevices, setMicrophoneDevices] = useState({ browser: "", native: "" });
   const [cameraDevice, setCameraDevice] = useState("");
   const loadMicrophones = useCallback(() => {
@@ -561,14 +549,6 @@ export function HostPage({
   const [metricsExpanded, setMetricsExpanded] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
-  const attachVideo = useCallback((element: HTMLVideoElement | null) => {
-    videoRef.current = element;
-    setVideoElement(element);
-  }, []);
-  const stageCompositor = useMemo(() => stageCompositorFor(stream?.getVideoTracks()[0]), [stream]);
-  const stageSlots = useStageSlots(stageCompositor);
-  const hostCameraOn = stageSlots.some((slot) => slot.id === "host");
   const streamRef = useRef<MediaStream | null>(null);
   const signalRef = useRef<SignalingClient | null>(null);
   const displayNameRef = useRef(displayName);
@@ -638,28 +618,36 @@ export function HostPage({
     () => labelParticipantSnapshot(participantPresence),
     [participantPresence],
   );
-  // Stage: up to two Viewers on camera, composited into the shared screen.
-  const viewerLabelsRef = useRef(new Map<string, string>());
-  viewerLabelsRef.current = new Map(viewers.map((viewer) => [viewer.peerId, viewer.label]));
+  // Watch-party cameras: the Host and up to two accepted friends, shown as
+  // tiles beside the shared screen. The shared screen route is unchanged.
   const [, setStageRevision] = useState(0);
-  const stageHostRef = useRef<StageHost | null>(null);
-  if (!stageHostRef.current) {
-    stageHostRef.current = new StageHost({
+  const stageMeshRef = useRef<StageMesh | null>(null);
+  if (!stageMeshRef.current) {
+    stageMeshRef.current = new StageMesh({
       send: (message) => signalRef.current?.send(message) ?? false,
       iceServers: () => iceConfigRef.current?.iceServers ?? [],
-      audio: () => hostAudioRef.current,
-      labelFor: (peerId) => viewerLabelsRef.current.get(peerId) ?? t("stage.friend"),
       onChange: () => setStageRevision((revision) => revision + 1),
     });
   }
-  const stageHost = stageHostRef.current;
+  const stageMesh = stageMeshRef.current;
+  const [stageRequests, setStageRequests] = useState<string[]>([]);
+  const [hostCameraState, setHostCameraState] = useState<StageSelfState>("idle");
+  const [hostCameraNotice, setHostCameraNotice] = useState<CopyKey | null>(null);
+  useEffect(() => () => stageMesh.dispose(), [stageMesh]);
   useEffect(() => {
-    stageHost.attachCompositor(stageCompositor);
-    if (!stageCompositor) stageHost.reset();
-  }, [stageHost, stageCompositor]);
+    // Leaving or losing the room ends the Host camera with it.
+    if (room || !stageMesh.publishing) return;
+    stageMesh.stopLocal();
+    setHostCameraState("idle");
+  }, [room, stageMesh]);
   useEffect(() => {
-    stageHost.retain(new Set(viewers.map((viewer) => viewer.peerId)));
-  }, [stageHost, viewers]);
+    const present = new Set(participantPresence.map((participant) => participant.peerId));
+    stageMesh.setParticipants(present);
+    setStageRequests((requests) => requests.filter((peerId) => present.has(peerId)));
+  }, [stageMesh, participantPresence]);
+  const stagePeerLabel = (peerId: string) => peerId === hostPeerIdRef.current ? t("stage.you")
+    : viewers.find((viewer) => viewer.peerId === peerId)?.label ?? t("stage.friend");
+  const stageGuests = stageMesh.publishers.filter((peerId) => peerId !== hostPeerIdRef.current);
   const hostPresence = useMemo(
     () =>
       participantPresence.find(
@@ -1532,9 +1520,9 @@ export function HostPage({
     void openCaptureSourcePicker();
   }
 
-  function startBrowserShareFromPicker(source: BrowserCaptureSource, deviceId = "", withCamera = false): void {
-    if (phase === "live") void switchSource(source, deviceId, withCamera);
-    else void startSharing({ kind: "browser", source, deviceId, withCamera });
+  function startBrowserShareFromPicker(source: BrowserCaptureSource, deviceId = ""): void {
+    if (phase === "live") void switchSource(source, deviceId);
+    else void startSharing({ kind: "browser", source, deviceId });
   }
 
   async function loadNativeSourcePreview(
@@ -2303,18 +2291,6 @@ export function HostPage({
     if (!isCurrentGeneration(generation)) {
       return;
     }
-    if (message.type === "stage-request") {
-      stageHostRef.current?.onRequest(message.peerId);
-      return;
-    }
-    if (message.type === "stage-left") {
-      stageHostRef.current?.onLeft(message.peerId);
-      return;
-    }
-    if (message.type === "stage-signal") {
-      void stageHostRef.current?.onSignal(message.fromPeerId, message.payload);
-      return;
-    }
     if (message.type === "authenticated" && message.role === "host") {
       discardPreparedHostChild();
       routePolicyRef.current = { ...message.routePolicy };
@@ -2635,6 +2611,29 @@ export function HostPage({
             );
             writePreferredRoom(activeRoom.roomId);
           }
+          if (message.type === "authenticated" && message.role === "host") {
+            stageMeshRef.current?.setSelf(message.peerId);
+            // The server may have restarted; restate the Host camera, then
+            // ask who is on camera.
+            if (stageMeshRef.current?.publishing) signal.send({ type: "stage-publish", enabled: true });
+            signal.send({ type: "stage-sync" });
+          }
+          if (message.type === "stage-roster") {
+            stageMeshRef.current?.setRoster(message.publishers);
+            return;
+          }
+          if (message.type === "stage-request") {
+            setStageRequests((requests) => requests.includes(message.peerId) ? requests : [...requests, message.peerId]);
+            return;
+          }
+          if (message.type === "stage-left") {
+            setStageRequests((requests) => requests.filter((peerId) => peerId !== message.peerId));
+            return;
+          }
+          if (message.type === "stage-signal") {
+            void stageMeshRef.current?.onSignal(message.fromPeerId, message.payload);
+            return;
+          }
           if (
             message.type === "sharing-started" &&
             currentShareGeneration !== null &&
@@ -2753,8 +2752,7 @@ export function HostPage({
         nativeStarted = true;
       } else {
         // This must remain the first awaited operation in the button gesture.
-        captured = await captureBrowserSource(qualitySettingsRef.current, selection.source ?? "browser",
-          selection.deviceId);
+        captured = await captureBrowserSource(qualitySettingsRef.current, selection.source ?? "browser", selection.deviceId);
       }
     } catch (error) {
       if (!isCurrentShare(generation, shareGeneration)) {
@@ -2781,8 +2779,6 @@ export function HostPage({
       streamRef.current = captured;
       setStream(captured);
       watchCaptureEnd(captured, generation);
-      hostCameraWantedRef.current = selection.kind === "browser" && !!selection.withCamera;
-      if (hostCameraWantedRef.current) void setHostCameraEnabled(true);
       if (selection.kind === "native") {
         setDetails(
           captureDetails(captured, true, nativeSourceAudioRef.current),
@@ -2954,7 +2950,7 @@ export function HostPage({
     }
   }
 
-  async function switchSource(source?: BrowserCaptureSource, deviceId = "", withCamera = false): Promise<void> {
+  async function switchSource(source?: BrowserCaptureSource, deviceId = ""): Promise<void> {
     const generation = activeGenerationRef.current;
     if (
       phase !== "live" ||
@@ -3011,8 +3007,6 @@ export function HostPage({
       if (source === "camera") setCameraDevice(deviceId);
       captured = hostAudioRef.current?.attach(captured, source) ?? captured;
       await replaceBrowserStream(captured, generation, token);
-      if (withCamera) hostCameraWantedRef.current = true;
-      if (hostCameraWantedRef.current) void setHostCameraEnabled(true);
     } catch (error) {
       if (isCurrentGeneration(generation)) setNoticeError(error, "source");
     } finally {
@@ -3020,55 +3014,28 @@ export function HostPage({
     }
   }
 
-  // Accepting a guest needs the audio mixer: creating it here, in the click,
-  // lets the audio context start and swaps the shared audio track once.
-  async function acceptStageGuest(peerId: string): Promise<void> {
-    const audio = hostAudioRef.current;
-    const generation = activeGenerationRef.current;
-    if (!audio || generation === null || sourceSwitchRef.current || qualityChangeRef.current) return;
-    const token = {};
-    sourceSwitchRef.current = token;
+  async function startHostCamera(): Promise<void> {
+    if (!signalRef.current || hostCameraState === "starting") return;
+    setHostCameraState("starting");
+    setHostCameraNotice(null);
     try {
-      const mixed = await audio.ensureMixer();
-      if (!isCurrentGeneration(generation) || hostAudioRef.current !== audio) return;
-      if (mixed) await replaceBrowserStream(mixed, generation, token);
-      stageHost.decide(peerId, true);
+      await stageMesh.startLocal();
+      signalRef.current?.send({ type: "stage-publish", enabled: true });
+      setHostCameraState("live");
+      // The camera tile carries the Host's voice; the share-bar microphone
+      // would make viewers hear it twice.
+      if (microphoneEnabled && hostAudioRef.current) void changeMicrophone(false, microphoneDevices.browser);
     } catch (error) {
-      debugError("stage", "host-mixer-failed", error);
-      stageHost.decide(peerId, false);
-      setNoticeValue({ kind: "key", key: "stage.audioUnavailable", target: "operation", comic: "warning", tone: "warn" });
-    } finally {
-      finishSourceSwitch(token);
+      debugError("stage", "host-camera-failed", error);
+      setHostCameraState("idle");
+      setHostCameraNotice(error instanceof DOMException && error.name === "NotAllowedError" ? "stage.denied" : "stage.unavailable");
     }
   }
 
-  // The Host camera is one box in the screen compositor. Toggling it only adds
-  // or removes that box; the shared track and every route stay unchanged.
-  async function setHostCameraEnabled(enabled: boolean): Promise<void> {
-    const compositor = stageCompositorFor(streamRef.current?.getVideoTracks()[0]);
-    hostCameraWantedRef.current = enabled;
-    if (!compositor || !enabled) {
-      compositor?.removeSource("host");
-      return;
-    }
-    if (compositor.has("host")) return;
-    setHostCameraPending(true);
-    try {
-      const track = await captureStageCamera(cameraDevice);
-      if (!hostCameraWantedRef.current || !compositor.live ||
-          stageCompositorFor(streamRef.current?.getVideoTracks()[0]) !== compositor) {
-        track.stop();
-        return;
-      }
-      compositor.addSource("host", track, { owned: true, layout: readHostCameraLayout() });
-    } catch (error) {
-      hostCameraWantedRef.current = false;
-      debugError("capture", "host-camera-failed", error);
-      setNoticeValue({ kind: "key", key: error instanceof DOMException && error.name === "NotAllowedError"
-        ? "host.camera.denied" : "host.camera.unavailable", target: "operation", comic: "source-failed", tone: "warn" });
-    } finally {
-      setHostCameraPending(false);
-    }
+  function stopHostCamera(): void {
+    signalRef.current?.send({ type: "stage-publish", enabled: false });
+    stageMesh.stopLocal();
+    setHostCameraState("idle");
   }
 
   function setCaptureError(error: unknown, source: BrowserCaptureSource | undefined, action: "source" | "capture") {
@@ -3641,6 +3608,7 @@ export function HostPage({
           {t("host.title", { name: hostPresence?.displayName ?? displayName })}
         </h1>
         <div className="lr-scene">
+          <div className="lr-watch-party">
           <StageTv
             live={phase === "live"}
             hasEntry={
@@ -3651,24 +3619,14 @@ export function HostPage({
               label={statusNotice ? noticeText ?? undefined : undefined} />}
           >
             {stream ? (
-              <video ref={attachVideo} autoPlay muted playsInline />
-            ) : null}
-            {stageCompositor && phase === "live" && !nativeSources && !sharingPaused && !localPreviewPaused ? (
-              <StageLayoutEditor compositor={stageCompositor} video={videoElement} slots={stageSlots}
-                labelFor={(slot) => slot.id === "host" ? t("host.camera.you") : slot.label}
-                onCommit={(id, layout) => { if (id === "host") writeHostCameraLayout(layout); }} />
+              <video ref={videoRef} autoPlay muted playsInline />
             ) : null}
             <RoomChatOverlay session={room ? interactionSession : null}
               visible={phase === "live" && !nativeSources && !sharingPaused && !switchingSource && !localPreviewPaused} />
             {nativeSources ? (
               <CaptureSourcePicker
                 nativeSources={nativeSources}
-                onBrowser={withCamera => {
-                  writeBrowserCameraPreference(withCamera);
-                  startBrowserShareFromPicker("browser", "", withCamera);
-                }}
-                browserCameraAvailable={!nativeActive && !!navigator.mediaDevices?.getUserMedia && cameraOverlaySupported()}
-                initialBrowserCamera={readBrowserCameraPreference()}
+                onBrowser={() => startBrowserShareFromPicker("browser")}
                 onCamera={deviceId => startBrowserShareFromPicker("camera", deviceId)}
                 initialCamera={cameraDevice}
                 activeCameraVideo={hostAudioRef.current?.sourceKind === "camera" ? videoRef.current : null}
@@ -3783,24 +3741,14 @@ export function HostPage({
               />
             ) : null}
           </StageTv>
+          <CameraStrip tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />
+          </div>
           <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
             {phase === "live" ? <>
               <HostMicrophone enabled={microphoneEnabled} pending={microphonePending}
                 unavailable={nativeActive && !nativeClientRef.current?.health.nativeMedia.microphone} paused={sharingPaused} disabled={switchingSource || changingQuality}
                 volume={microphoneVolume}
                 onToggle={() => void changeMicrophone(!microphoneEnabled, microphoneDevices[nativeActive ? "native" : "browser"])} />
-              {stageCompositor ? (
-                <Btn
-                  icon={hostCameraOn ? "camera" : "cameraOff"}
-                  cap="host.camera.label"
-                  title={hostCameraPending ? "host.camera.pending" : hostCameraOn ? "host.camera.hide" : "host.camera.show"}
-                  hint="hint-capture-camera"
-                  pressed={hostCameraOn}
-                  busy={hostCameraPending}
-                  disabled={hostCameraPending || sharingPaused || switchingSource || changingQuality}
-                  onClick={() => void setHostCameraEnabled(!hostCameraOn)}
-                />
-              ) : null}
               <Btn
                 icon={sharingPaused ? "play" : "pause"}
                 cap={sharingPaused ? "host.resume" : "host.pause"}
@@ -3854,18 +3802,21 @@ export function HostPage({
               />
             ) : null}
           </div>
-          {phase === "live" && stageCompositor ? (
-            <HostStagePanel
-              requests={stageHost.requests}
-              members={stageHost.membersSnapshot()}
-              full={stageHost.full}
-              busy={switchingSource || changingQuality}
-              labelFor={(peerId) => viewerLabelsRef.current.get(peerId) ?? t("stage.friend")}
-              onAccept={(peerId) => void acceptStageGuest(peerId)}
-              onDecline={(peerId) => stageHost.decide(peerId, false)}
-              onRemove={(peerId) => stageHost.remove(peerId)}
-            />
-          ) : null}
+          {room ? <>
+            <StageSelfControls host state={hostCameraState} notice={hostCameraNotice} media={stageMesh.media}
+              onStart={() => void startHostCamera()} onStop={stopHostCamera}
+              onCamera={(enabled) => stageMesh.setCamera(enabled)} onMicrophone={(enabled) => stageMesh.setMicrophone(enabled)} />
+            <HostStagePanel requests={stageRequests} guests={stageGuests} labelFor={stagePeerLabel}
+              onAccept={(peerId) => {
+                setStageRequests((requests) => requests.filter((id) => id !== peerId));
+                signalRef.current?.send({ type: "stage-decision", peerId, accept: true });
+              }}
+              onDecline={(peerId) => {
+                setStageRequests((requests) => requests.filter((id) => id !== peerId));
+                signalRef.current?.send({ type: "stage-decision", peerId, accept: false });
+              }}
+              onRemove={(peerId) => signalRef.current?.send({ type: "stage-remove", peerId })} />
+          </> : null}
           <div className="lr-stage-notices" role="status" aria-live="polite">
             {details?.hasSourceAudio === false && stream ? (
               <Pill icon="speakerOff" label={t("host.noAudio")} comic="no-audio" tone="off" />

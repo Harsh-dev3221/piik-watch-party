@@ -975,13 +975,15 @@ export const clientMessageSchema = z.union([
     })
     .strict(),
   z.object({ type: z.literal("abandon-room") }).strict(),
-  // Stage: up to MAX_STAGE_PEERS Viewers send camera and microphone to the Host
-  // over a dedicated connection; the Host composites them into the share.
+  // Stage (watch-party cameras): the Host and up to MAX_STAGE_PEERS accepted
+  // Viewers send camera and microphone directly to every other participant.
   z.object({ type: z.literal("stage-request") }).strict(),
+  z.object({ type: z.literal("stage-publish"), enabled: z.boolean() }).strict(),
+  z.object({ type: z.literal("stage-sync") }).strict(),
   z.object({ type: z.literal("stage-leave") }).strict(),
   z.object({ type: z.literal("stage-decision"), peerId: opaqueIdSchema, accept: z.boolean() }).strict(),
   z.object({ type: z.literal("stage-remove"), peerId: opaqueIdSchema }).strict(),
-  z.object({ type: z.literal("stage-signal"), targetPeerId: opaqueIdSchema.optional(), payload: signalPayloadSchema }).strict(),
+  z.object({ type: z.literal("stage-signal"), targetPeerId: opaqueIdSchema, payload: signalPayloadSchema }).strict(),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export const MAX_STAGE_PEERS = 2;
@@ -1231,6 +1233,7 @@ export const serverMessageSchema = z.union([
   z.object({ type: z.literal("stage-left"), peerId: opaqueIdSchema }).strict(),
   z.object({ type: z.literal("stage-state"), state: z.enum(["accepted", "declined", "removed"]) }).strict(),
   z.object({ type: z.literal("stage-signal"), fromPeerId: opaqueIdSchema, payload: signalPayloadSchema }).strict(),
+  z.object({ type: z.literal("stage-roster"), publishers: z.array(opaqueIdSchema).max(3) }).strict(),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 

@@ -40,8 +40,8 @@ import {
   StageTv,
 } from "../components/living/Stage";
 import { StatusIndicator } from "../components/living/StatusIndicator";
-import { GuestStageControls } from "../components/living/StagePanels";
-import { StageGuest } from "../media/stage-guest";
+import { CameraStrip, StageSelfControls, type StageSelfState } from "../components/living/StagePanels";
+import { StageMesh } from "../media/stage-mesh";
 import { Tooltip } from "../components/living/Tooltip";
 import { PlaybackControls } from "../components/living/PlaybackControls";
 import { useTheaterMode } from "../components/living/use-theater-mode";
@@ -262,30 +262,73 @@ export function ViewerPage({
   }
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  // Stage: this Viewer on camera. The signaling effect owns send and ICE.
+  // Watch-party cameras. The signaling effect owns send and ICE servers.
   const stageSendRef = useRef<((message: ClientMessage) => boolean) | null>(null);
   const stageIceServersRef = useRef<RTCIceServer[]>([]);
   const [, setStageRevision] = useState(0);
-  const stageGuestRef = useRef<StageGuest | null>(null);
-  if (!stageGuestRef.current) {
-    stageGuestRef.current = new StageGuest({
+  const stageMeshRef = useRef<StageMesh | null>(null);
+  if (!stageMeshRef.current) {
+    stageMeshRef.current = new StageMesh({
       send: (message) => stageSendRef.current?.(message) ?? false,
       iceServers: () => stageIceServersRef.current,
       onChange: () => setStageRevision((revision) => revision + 1),
     });
   }
-  const stageGuest = stageGuestRef.current;
-  const stageAudioActive = stageGuest.returnAudioActive;
+  const stageMesh = stageMeshRef.current;
+  const [stageState, setStageState] = useState<StageSelfState>("idle");
+  const stageStateRef = useRef(stageState);
+  stageStateRef.current = stageState;
+  const [stageNotice, setStageNotice] = useState<CopyKey | null>(null);
+  useEffect(() => () => stageMesh.dispose(), [stageMesh]);
   useEffect(() => {
-    // The return mix replaces the shared audio while on camera; muting the
-    // page's player avoids hearing the stream twice and its echo of yourself.
-    const video = videoRef.current;
-    if (!video || !stageAudioActive) return;
-    const wasMuted = video.muted;
-    video.muted = true;
-    return () => { video.muted = wasMuted; };
-  }, [stageAudioActive]);
-  useEffect(() => () => stageGuest.dispose(), [stageGuest]);
+    stageMesh.setParticipants((participantPresence ?? []).map((participant) => participant.peerId));
+  }, [stageMesh, participantPresence]);
+  const stageLabels = useMemo(() => {
+    const snapshot = labelParticipantSnapshot(participantPresence ?? []);
+    const labels = new Map<string, string>();
+    if (snapshot.host) labels.set(snapshot.host.peerId, snapshot.host.label);
+    for (const viewer of snapshot.viewers) labels.set(viewer.peerId, viewer.label);
+    return labels;
+  }, [participantPresence]);
+
+  function requestStage(): void {
+    if (stageSendRef.current?.({ type: "stage-request" })) {
+      setStageNotice(null);
+      setStageState("requesting");
+    }
+  }
+
+  function leaveStage(notice: CopyKey | null = null, state: StageSelfState = "idle"): void {
+    if (stageStateRef.current !== "idle") stageSendRef.current?.({ type: "stage-leave" });
+    stageMesh.stopLocal();
+    stageStateRef.current = state;
+    setStageState(state);
+    setStageNotice(notice);
+  }
+
+  async function onStageState(state: "accepted" | "declined" | "removed"): Promise<void> {
+    if (state !== "accepted") {
+      stageMesh.stopLocal();
+      stageStateRef.current = state;
+      setStageState(state);
+      setStageNotice(state === "declined" ? "stage.declined" : "stage.removed");
+      return;
+    }
+    if (stageStateRef.current !== "requesting") return;
+    stageStateRef.current = "starting";
+    setStageState("starting");
+    try {
+      await stageMesh.startLocal();
+      if (stageStateRef.current !== "starting") {
+        stageMesh.stopLocal();
+        return;
+      }
+      stageStateRef.current = "live";
+      setStageState("live");
+    } catch (error) {
+      leaveStage(error instanceof DOMException && error.name === "NotAllowedError" ? "stage.denied" : "stage.unavailable", "failed");
+    }
+  }
   const peerRef = useRef<ViewerMediaPeer | null>(null);
   const viewerSfuRouteRef = useRef<ViewerSfuRoute | null>(null);
   const signalRef = useRef<SignalingClient | null>(null);
@@ -1492,6 +1535,11 @@ export function ViewerPage({
         relayChildEvidenceStore.clear();
         currentPeerId = message.peerId;
         setSelfPeerId(message.peerId);
+        // A new session is a new stage identity: an old camera slot is gone.
+        if (stageStateRef.current !== "idle") leaveStage();
+        stageIceServersRef.current = message.iceConfig.iceServers;
+        stageMeshRef.current?.setSelf(message.peerId);
+        signal.send({ type: "stage-sync" });
         endpointMediaCopyCapacity = message.endpointMediaCopyCapacity;
         currentAssignment = limitMediaAssignment(
           currentAssignment,
@@ -1520,7 +1568,6 @@ export function ViewerPage({
         );
         signal.send(relayCapacityMessageForBrowser());
         currentIceConfig = message.iceConfig;
-        stageIceServersRef.current = message.iceConfig.iceServers;
         currentHostOnline = message.hostOnline;
         const sharingPaused = message.hostPaused ?? false;
         if (currentHostPaused !== sharingPaused && sharingPaused) {
@@ -1766,16 +1813,19 @@ export function ViewerPage({
         setParticipantPresence(message.viewers);
         return;
       }
+      if (message.type === "stage-roster") {
+        stageMeshRef.current?.setRoster(message.publishers);
+        return;
+      }
       if (message.type === "stage-state") {
-        void stageGuestRef.current?.onState(message.state);
+        void onStageState(message.state);
         return;
       }
       if (message.type === "stage-signal") {
-        void stageGuestRef.current?.onSignal(message.payload);
+        void stageMeshRef.current?.onSignal(message.fromPeerId, message.payload);
         return;
       }
       if (message.type === "sharing-stopped") {
-        stageGuestRef.current?.reset();
         invalidatePresentedMedia();
         currentRouteAssignment = null;
         currentRouteConnectionId = null;
@@ -1863,7 +1913,8 @@ export function ViewerPage({
     return () => {
       active = false;
       stageSendRef.current = null;
-      stageGuestRef.current?.reset();
+      stageMeshRef.current?.stopLocal();
+      stageMeshRef.current?.setSelf(null);
       document.removeEventListener("freeze", suspendForPageLifecycle);
       document.removeEventListener("resume", recoverFromPageLifecycle);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -2233,6 +2284,7 @@ export function ViewerPage({
             : t("viewer.titleFallback")}
         </h1>
         <div className="lr-scene" id="viewer-stage">
+          <div className="lr-watch-party">
           <StageTv
             live={presentation.hasCurrentFrame || presentation.hasRetainedFrame}
             label={t("viewer.stageAria")}
@@ -2318,16 +2370,14 @@ export function ViewerPage({
                 />
               )}
           </StageTv>
-          <GuestStageControls
-            state={stageGuest.state}
-            failure={stageGuest.failure}
-            media={stageGuest.media}
-            available={!!remoteMedia}
-            onRequest={() => stageGuest.request()}
-            onLeave={() => stageGuest.leave()}
-            onCamera={(enabled) => stageGuest.setCamera(enabled)}
-            onMicrophone={(enabled) => stageGuest.setMicrophone(enabled)}
-          />
+          <CameraStrip tiles={stageMesh.tiles()}
+            labelFor={(tile) => tile.self ? t("stage.you") : stageLabels.get(tile.peerId) ?? t("stage.friend")} />
+          </div>
+          {selfPeerId ? (
+            <StageSelfControls host={false} state={stageState} notice={stageNotice} media={stageMesh.media}
+              onStart={requestStage} onStop={() => leaveStage()}
+              onCamera={(enabled) => stageMesh.setCamera(enabled)} onMicrophone={(enabled) => stageMesh.setMicrophone(enabled)} />
+          ) : null}
           <div className="lr-stage-notices" role="status" aria-live="polite">
             {viewerStatus.notice && (
               <Pill

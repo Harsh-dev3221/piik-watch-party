@@ -2,9 +2,9 @@ package protocol
 
 import "errors"
 
-// Stage messages let up to MaxStagePeers Viewers send their camera and
-// microphone to the Host over a dedicated Host<->Viewer connection. The Host
-// composites them into the one shared picture and mix; routes are unchanged.
+// Stage messages run the watch-party cameras: the Host and up to
+// MaxStagePeers accepted Viewers send camera and microphone directly to every
+// other participant. The shared screen route is unchanged.
 
 // MaxStagePeers bounds accepted stage Viewers per room.
 const MaxStagePeers = 2
@@ -173,6 +173,62 @@ func decodeServerStageSignal(data []byte) (ServerMessage, error) {
 	}
 	if !ValidOpaqueID(message.FromPeerID) {
 		return nil, errors.New("fromPeerId is not an opaque id")
+	}
+	return message, nil
+}
+
+// StagePublishMessage is { type: "stage-publish", enabled } from the Host:
+// the Host turns its own camera tile on or off.
+type StagePublishMessage struct {
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+}
+
+// StageSyncMessage is { type: "stage-sync" }: a participant asks for the
+// current roster, for example after joining.
+type StageSyncMessage struct {
+	Type string `json:"type"`
+}
+
+func (StagePublishMessage) isClientMessage() {}
+func (StageSyncMessage) isClientMessage()    {}
+
+// ServerStageRosterMessage lists everyone on camera, the Host first.
+type ServerStageRosterMessage struct {
+	Type       string   `json:"type"`
+	Publishers []string `json:"publishers"`
+}
+
+func (ServerStageRosterMessage) isServerMessage() {}
+
+func decodeStagePublish(data []byte) (ClientMessage, error) {
+	var message StagePublishMessage
+	present, err := decodeObject(data, &message)
+	if err != nil {
+		return nil, err
+	}
+	if err := present.require("type", "enabled"); err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+func decodeServerStageRoster(data []byte) (ServerMessage, error) {
+	var message ServerStageRosterMessage
+	present, err := decodeObject(data, &message)
+	if err != nil {
+		return nil, err
+	}
+	if err := present.require("type", "publishers"); err != nil {
+		return nil, err
+	}
+	if len(message.Publishers) > MaxStagePeers+1 {
+		return nil, errors.New("publishers exceeds the stage size")
+	}
+	for _, peerID := range message.Publishers {
+		if !ValidOpaqueID(peerID) {
+			return nil, errors.New("publisher is not an opaque id")
+		}
 	}
 	return message, nil
 }

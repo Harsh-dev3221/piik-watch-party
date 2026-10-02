@@ -2184,45 +2184,86 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
 
 /* append-sink: workflow agents append new rules ABOVE this line. */
 
-/* Host-only handles for camera boxes drawn into a shared screen. */
-.lr-stage-layout { position: absolute; pointer-events: none; z-index: 2; }
-.lr-stage-box {
-  position: absolute;
-  box-sizing: border-box;
-  border: 2px dashed color-mix(in srgb, var(--paper) 85%, transparent);
-  border-radius: 10px;
-  cursor: move;
-  pointer-events: auto;
-  touch-action: none;
-}
-.lr-stage-box:hover { border-color: var(--action); border-style: solid; }
-.lr-stage-box-label {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  max-width: calc(100% - 12px);
+
+/* Watch party: shared screen with camera tiles beside it. */
+.lr-watch-party { display: flex; align-items: flex-start; justify-content: center; gap: 14px; width: 100%; }
+.lr-watch-party > .lr-tv { flex: 1 1 auto; min-width: 0; }
+.lr-camera-strip { display: flex; flex: 0 0 clamp(170px, 20vw, 260px); flex-direction: column; gap: 10px; }
+.lr-camera-tile {
+  position: relative;
+  margin: 0;
   overflow: hidden;
-  padding: 1px 7px;
+  aspect-ratio: 4 / 3;
+  border: 3px solid var(--frame);
+  border-radius: 14px;
+  background: var(--stage);
+}
+.lr-camera-tile video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lr-camera-tile.is-self video { transform: scaleX(-1); }
+.lr-camera-tile-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+}
+.lr-camera-tile-placeholder span {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--action) 70%, var(--stage));
+  font-size: 24px;
+  font-weight: 700;
+}
+.lr-camera-tile-placeholder small { color: color-mix(in srgb, #fff 70%, transparent); }
+.lr-camera-tile figcaption {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 16px);
+  padding: 2px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--stage) 75%, transparent);
   color: #fff;
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.lr-stage-box-resize {
+.lr-camera-tile figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lr-camera-tile-sound {
   position: absolute;
-  right: -7px;
-  bottom: -7px;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--paper);
-  border-radius: 4px;
+  inset: auto 8px 40px auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
   background: var(--action);
-  cursor: nwse-resize;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+@media (max-width: 900px) {
+  .lr-watch-party { flex-direction: column; align-items: stretch; }
+  .lr-camera-strip { flex: none; flex-direction: row; overflow-x: auto; }
+  .lr-camera-tile { flex: 0 0 min(44vw, 220px); }
 }
 
-/* Stage: Host requests/guests panel and the Viewer's camera controls. */
+/* Stage controls: own camera buttons and the Host's guest panel. */
+.lr-stage-self {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px auto 0;
+}
+.lr-stage-self-status, .lr-stage-name small { color: var(--muted); }
 .lr-stage-panel {
   display: grid;
   gap: 8px;
@@ -2239,12 +2280,3 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
 .lr-stage-row.is-request { padding-top: 8px; border-top: 1px dashed var(--control-edge); }
 .lr-stage-name { display: grid; flex: 1; min-width: 0; }
 .lr-stage-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lr-stage-name small, .lr-stage-guest-status { color: var(--muted); }
-.lr-stage-guest {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 10px auto 0;
-}

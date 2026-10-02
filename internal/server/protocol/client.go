@@ -277,6 +277,10 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		return decodeStageRemove(data)
 	case "stage-signal":
 		return decodeClientStageSignal(data)
+	case "stage-publish":
+		return decodeStagePublish(data)
+	case "stage-sync":
+		return decodeEmptyClientMessage(data, StageSyncMessage{Type: messageType})
 	}
 	return nil, fmt.Errorf("unknown client message type %q", messageType)
 }
