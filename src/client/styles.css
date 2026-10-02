@@ -2357,7 +2357,7 @@ body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-
 
 /* Host layout: a slim room bar on top, the stage with one control bar on the
    left, cameras / friends / chat in a side column, room panels below. */
-.lr-room.is-host-layout { width: min(1440px, 100%); }
+.lr-room.is-host-layout:not(.is-theater) { width: min(1440px, 100%); }
 .lr-host-topbar { margin: 0 0 16px; }
 .lr-room.is-host-layout .lr-scene {
   display: grid;
@@ -2374,8 +2374,8 @@ body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-
 .lr-host-side .lr-stage-panel .lr-btn { min-width: 40px; height: 40px; padding: 0 10px; border-width: 1px; box-shadow: none; }
 .lr-host-side .lr-stage-panel .lr-cap { display: none; }
 
-/* One control bar, one button size: sharing, then the Host's camera, then
-   settings and stop. Names live in each button's tooltip. */
+/* One control bar, one button size: sharing and settings, then the Host's
+   camera, then stop. Names live in each button's tooltip. */
 .lr-host-bar {
   display: flex;
   flex-wrap: wrap;
@@ -2399,7 +2399,7 @@ body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-
 .lr-host-bar-divider { order: 5; width: 1px; height: 28px; margin: 0 6px; background: var(--control-edge); }
 .lr-host-bar > .lr-stage-self > * { order: 6; }
 .lr-host-bar .lr-stage-self-status { order: 7; padding: 0 6px; font-size: 12px; }
-.lr-host-bar .lr-comic-tip-wrap:has([aria-controls="host-advanced-door"]) { order: 8; }
+.lr-host-bar .lr-comic-tip-wrap:has([aria-controls="host-advanced-door"]) { order: 4; }
 .lr-host-bar .lr-comic-tip-wrap:has(#host-stop-share, #host-cancel-share) {
   order: 9;
   margin-inline-start: 4px;

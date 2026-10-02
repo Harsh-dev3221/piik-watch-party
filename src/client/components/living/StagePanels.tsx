@@ -277,7 +277,7 @@ export function StageSelfControls({ host, state, notice, media, onStart, onStop,
           title={media.camera ? "stage.cameraTurnOff" : "stage.cameraTurnOn"} onClick={() => onCamera(!media.camera)} />
         <Btn icon={media.microphone ? "microphone" : "microphoneOff"} cap="stage.microphone" pressed={media.microphone}
           title={media.microphone ? "stage.micTurnOff" : "stage.micTurnOn"} onClick={() => onMicrophone(!media.microphone)} />
-        <Btn icon="x" cap={host ? "stage.stopCamera" : "stage.leave"} title={host ? "stage.stopCamera" : "stage.leave"}
+        <Btn icon="door" cap={host ? "stage.stopCamera" : "stage.leave"} title={host ? "stage.stopCamera" : "stage.leave"}
           tone="danger" onClick={onStop} />
       </> : state === "requesting" || state === "starting" ? <>
         <Btn icon="x" cap="stage.cancel" title="stage.cancel" onClick={onStop} />
