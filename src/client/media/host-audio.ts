@@ -12,6 +12,10 @@ export class HostAudio {
   private microphoneVolume = 1;
   private microphoneDevice = "";
   private closed = false;
+  // Stage guests: their voices join the shared mix, and each guest receives a
+  // separate mix without their own voice so they never hear themselves.
+  private guests = new Map<string, MediaStreamTrack>();
+  private guestMixes = new Map<string, MediaStreamAudioDestinationNode>();
 
   constructor(source: MediaStream, private changed: (enabled: boolean) => void,
     private kind: BrowserCaptureSource = "browser") {
@@ -103,13 +107,20 @@ export class HostAudio {
   private compose(): MediaStream {
     if (!this.context || !this.destination) return this.source;
     this.inputs.forEach((input) => input.disconnect());
-    this.inputs = [...this.source.getAudioTracks(), this.microphone]
+    const guestOf = new Map([...this.guests].map(([id, track]) => [track, id]));
+    this.inputs = [...this.source.getAudioTracks(), this.microphone, ...this.guests.values()]
       .filter((track): track is MediaStreamTrack => !!track && track.readyState === "live")
       .map((track) => {
         const input = this.context!.createMediaStreamSource(new MediaStream([track]));
         // Only the microphone follows the input-volume control. Source audio
         // and the Viewer's playback volume have separate owners.
-        input.connect(track === this.microphone ? this.microphoneGain! : this.destination!);
+        if (track === this.microphone) {
+          input.connect(this.microphoneGain!);
+          return input;
+        }
+        input.connect(this.destination!);
+        const guest = guestOf.get(track);
+        for (const [id, mix] of this.guestMixes) if (id !== guest) input.connect(mix);
         return input;
       });
     const audio = this.destination.stream.getAudioTracks()[0]!;
@@ -117,9 +128,63 @@ export class HostAudio {
     return new MediaStream([...this.source.getVideoTracks(), audio]);
   }
 
+  /**
+   * Creates the mixer before stage guests join. Returns the new output stream
+   * when the shared audio track changes (no mixer existed yet), otherwise null.
+   * Call it from a user gesture so the audio context may start.
+   */
+  async ensureMixer(): Promise<MediaStream | null> {
+    if (this.closed) return null;
+    if (this.context) {
+      await this.context.resume().catch(() => undefined);
+      return null;
+    }
+    this.context = new AudioContext();
+    this.destination = this.context.createMediaStreamDestination();
+    this.microphoneGain = this.context.createGain();
+    this.microphoneGain.gain.value = this.microphoneVolume;
+    this.microphoneGain.connect(this.destination);
+    if (!await this.context.resume().then(() => true, () => false)) {
+      this.closeMixer();
+      throw new Error("Audio context unavailable");
+    }
+    return this.compose();
+  }
+
+  /** The mix a stage guest hears: everything except that guest's own voice. */
+  guestMix(id: string): MediaStreamTrack | null {
+    if (this.closed || !this.context || !this.microphoneGain) return null;
+    let mix = this.guestMixes.get(id);
+    if (!mix) {
+      mix = this.context.createMediaStreamDestination();
+      this.guestMixes.set(id, mix);
+      this.microphoneGain.connect(mix);
+      this.compose();
+    }
+    return mix.stream.getAudioTracks()[0] ?? null;
+  }
+
+  addGuest(id: string, track: MediaStreamTrack): void {
+    if (this.closed || !this.context) return;
+    this.guests.set(id, track);
+    this.compose();
+  }
+
+  removeGuest(id: string): void {
+    const mix = this.guestMixes.get(id);
+    this.guestMixes.delete(id);
+    if (mix) {
+      this.microphoneGain?.disconnect(mix);
+      mix.stream.getTracks().forEach((track) => track.stop());
+    }
+    if (this.guests.delete(id) || mix) this.compose();
+  }
+
   private closeMixer() {
     this.inputs.forEach((input) => input.disconnect());
     this.inputs = [];
+    for (const mix of this.guestMixes.values()) mix.stream.getTracks().forEach((track) => track.stop());
+    this.guestMixes.clear();
     this.microphoneGain?.disconnect();
     this.microphoneGain = null;
     this.destination?.stream.getTracks().forEach((track) => track.stop());

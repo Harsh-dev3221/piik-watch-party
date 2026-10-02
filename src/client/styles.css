@@ -2221,3 +2221,30 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
   background: var(--action);
   cursor: nwse-resize;
 }
+
+/* Stage: Host requests/guests panel and the Viewer's camera controls. */
+.lr-stage-panel {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 560px);
+  margin: 10px auto 0;
+  padding: 12px 14px;
+  border: 2px solid var(--control-edge);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--control-shadow);
+}
+.lr-stage-panel-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.lr-stage-row { display: flex; align-items: center; gap: 8px; }
+.lr-stage-row.is-request { padding-top: 8px; border-top: 1px dashed var(--control-edge); }
+.lr-stage-name { display: grid; flex: 1; min-width: 0; }
+.lr-stage-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lr-stage-name small, .lr-stage-guest-status { color: var(--muted); }
+.lr-stage-guest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px auto 0;
+}

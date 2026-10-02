@@ -249,6 +249,12 @@ func DecodeServerMessage(data []byte) (ServerMessage, error) {
 		return nil, err
 	}
 	switch messageType {
+	case "stage-request", "stage-left":
+		return decodeServerStagePeer(data, messageType)
+	case "stage-state":
+		return decodeServerStageState(data)
+	case "stage-signal":
+		return decodeServerStageSignal(data)
 	case "room-interactions-ready":
 		return decodeRoomInteractionsReady(data)
 	case "room-interaction":

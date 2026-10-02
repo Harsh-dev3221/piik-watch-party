@@ -267,6 +267,16 @@ func DecodeClientMessage(data []byte) (ClientMessage, error) {
 		return decodeStartSharing(data)
 	case "abandon-room":
 		return decodeEmptyClientMessage(data, AbandonRoomMessage{Type: messageType})
+	case "stage-request":
+		return decodeEmptyClientMessage(data, StageRequestMessage{Type: messageType})
+	case "stage-leave":
+		return decodeEmptyClientMessage(data, StageLeaveMessage{Type: messageType})
+	case "stage-decision":
+		return decodeStageDecision(data)
+	case "stage-remove":
+		return decodeStageRemove(data)
+	case "stage-signal":
+		return decodeClientStageSignal(data)
 	}
 	return nil, fmt.Errorf("unknown client message type %q", messageType)
 }

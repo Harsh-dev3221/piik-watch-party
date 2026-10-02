@@ -186,6 +186,7 @@ func (s *Server) stopSharing(roomID string) {
 		s.shares[roomID] = roomShare{generation: current.generation}
 	}
 	s.clearRoomViewerEvidence(roomID)
+	s.clearStage(roomID)
 	s.router.stopRoom(roomID)
 	for _, viewer := range s.store.GetConnectedViewers(roomID) {
 		s.sendToSession(viewer.SessionID, protocol.SharingStoppedMessage{Type: "sharing-stopped"})
@@ -217,6 +218,7 @@ func (s *Server) closeRoom(closed room.ClosedRoom) {
 	s.clearRoomViewerEvidence(closed.RoomID)
 	s.router.deleteRoom(closed.RoomID)
 	delete(s.shares, closed.RoomID)
+	s.clearStage(closed.RoomID)
 	for _, sessionID := range closed.SessionIDs {
 		sess := s.sessionsByID[sessionID]
 		if sess == nil {

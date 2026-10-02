@@ -15,6 +15,7 @@ import {
   type ParticipantPresenceEntry,
   type ParticipantRouteAssignment,
   type PreparedRouteCandidate,
+  type ClientMessage,
   type ServerMessage,
   type RoutePolicy,
 } from "../../shared/protocol";
@@ -39,6 +40,8 @@ import {
   StageTv,
 } from "../components/living/Stage";
 import { StatusIndicator } from "../components/living/StatusIndicator";
+import { GuestStageControls } from "../components/living/StagePanels";
+import { StageGuest } from "../media/stage-guest";
 import { Tooltip } from "../components/living/Tooltip";
 import { PlaybackControls } from "../components/living/PlaybackControls";
 import { useTheaterMode } from "../components/living/use-theater-mode";
@@ -259,6 +262,30 @@ export function ViewerPage({
   }
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Stage: this Viewer on camera. The signaling effect owns send and ICE.
+  const stageSendRef = useRef<((message: ClientMessage) => boolean) | null>(null);
+  const stageIceServersRef = useRef<RTCIceServer[]>([]);
+  const [, setStageRevision] = useState(0);
+  const stageGuestRef = useRef<StageGuest | null>(null);
+  if (!stageGuestRef.current) {
+    stageGuestRef.current = new StageGuest({
+      send: (message) => stageSendRef.current?.(message) ?? false,
+      iceServers: () => stageIceServersRef.current,
+      onChange: () => setStageRevision((revision) => revision + 1),
+    });
+  }
+  const stageGuest = stageGuestRef.current;
+  const stageAudioActive = stageGuest.returnAudioActive;
+  useEffect(() => {
+    // The return mix replaces the shared audio while on camera; muting the
+    // page's player avoids hearing the stream twice and its echo of yourself.
+    const video = videoRef.current;
+    if (!video || !stageAudioActive) return;
+    const wasMuted = video.muted;
+    video.muted = true;
+    return () => { video.muted = wasMuted; };
+  }, [stageAudioActive]);
+  useEffect(() => () => stageGuest.dispose(), [stageGuest]);
   const peerRef = useRef<ViewerMediaPeer | null>(null);
   const viewerSfuRouteRef = useRef<ViewerSfuRoute | null>(null);
   const signalRef = useRef<SignalingClient | null>(null);
@@ -1493,6 +1520,7 @@ export function ViewerPage({
         );
         signal.send(relayCapacityMessageForBrowser());
         currentIceConfig = message.iceConfig;
+        stageIceServersRef.current = message.iceConfig.iceServers;
         currentHostOnline = message.hostOnline;
         const sharingPaused = message.hostPaused ?? false;
         if (currentHostPaused !== sharingPaused && sharingPaused) {
@@ -1738,7 +1766,16 @@ export function ViewerPage({
         setParticipantPresence(message.viewers);
         return;
       }
+      if (message.type === "stage-state") {
+        void stageGuestRef.current?.onState(message.state);
+        return;
+      }
+      if (message.type === "stage-signal") {
+        void stageGuestRef.current?.onSignal(message.payload);
+        return;
+      }
       if (message.type === "sharing-stopped") {
+        stageGuestRef.current?.reset();
         invalidatePresentedMedia();
         currentRouteAssignment = null;
         currentRouteConnectionId = null;
@@ -1821,9 +1858,12 @@ export function ViewerPage({
       }
     }
 
+    stageSendRef.current = (message) => active && signal.send(message);
     signal.start();
     return () => {
       active = false;
+      stageSendRef.current = null;
+      stageGuestRef.current?.reset();
       document.removeEventListener("freeze", suspendForPageLifecycle);
       document.removeEventListener("resume", recoverFromPageLifecycle);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -2278,6 +2318,16 @@ export function ViewerPage({
                 />
               )}
           </StageTv>
+          <GuestStageControls
+            state={stageGuest.state}
+            failure={stageGuest.failure}
+            media={stageGuest.media}
+            available={!!remoteMedia}
+            onRequest={() => stageGuest.request()}
+            onLeave={() => stageGuest.leave()}
+            onCamera={(enabled) => stageGuest.setCamera(enabled)}
+            onMicrophone={(enabled) => stageGuest.setMicrophone(enabled)}
+          />
           <div className="lr-stage-notices" role="status" aria-live="polite">
             {viewerStatus.notice && (
               <Pill

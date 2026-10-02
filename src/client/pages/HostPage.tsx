@@ -126,6 +126,8 @@ import {
   writeHostCameraLayout,
 } from "../media/camera-overlay";
 import { StageLayoutEditor, useStageSlots } from "../components/living/StageLayoutEditor";
+import { HostStagePanel } from "../components/living/StagePanels";
+import { StageHost } from "../media/stage-host";
 import {
   applyCaptureProfile,
   captureBrowserSource,
@@ -636,6 +638,28 @@ export function HostPage({
     () => labelParticipantSnapshot(participantPresence),
     [participantPresence],
   );
+  // Stage: up to two Viewers on camera, composited into the shared screen.
+  const viewerLabelsRef = useRef(new Map<string, string>());
+  viewerLabelsRef.current = new Map(viewers.map((viewer) => [viewer.peerId, viewer.label]));
+  const [, setStageRevision] = useState(0);
+  const stageHostRef = useRef<StageHost | null>(null);
+  if (!stageHostRef.current) {
+    stageHostRef.current = new StageHost({
+      send: (message) => signalRef.current?.send(message) ?? false,
+      iceServers: () => iceConfigRef.current?.iceServers ?? [],
+      audio: () => hostAudioRef.current,
+      labelFor: (peerId) => viewerLabelsRef.current.get(peerId) ?? t("stage.friend"),
+      onChange: () => setStageRevision((revision) => revision + 1),
+    });
+  }
+  const stageHost = stageHostRef.current;
+  useEffect(() => {
+    stageHost.attachCompositor(stageCompositor);
+    if (!stageCompositor) stageHost.reset();
+  }, [stageHost, stageCompositor]);
+  useEffect(() => {
+    stageHost.retain(new Set(viewers.map((viewer) => viewer.peerId)));
+  }, [stageHost, viewers]);
   const hostPresence = useMemo(
     () =>
       participantPresence.find(
@@ -2279,6 +2303,18 @@ export function HostPage({
     if (!isCurrentGeneration(generation)) {
       return;
     }
+    if (message.type === "stage-request") {
+      stageHostRef.current?.onRequest(message.peerId);
+      return;
+    }
+    if (message.type === "stage-left") {
+      stageHostRef.current?.onLeft(message.peerId);
+      return;
+    }
+    if (message.type === "stage-signal") {
+      void stageHostRef.current?.onSignal(message.fromPeerId, message.payload);
+      return;
+    }
     if (message.type === "authenticated" && message.role === "host") {
       discardPreparedHostChild();
       routePolicyRef.current = { ...message.routePolicy };
@@ -2979,6 +3015,28 @@ export function HostPage({
       if (hostCameraWantedRef.current) void setHostCameraEnabled(true);
     } catch (error) {
       if (isCurrentGeneration(generation)) setNoticeError(error, "source");
+    } finally {
+      finishSourceSwitch(token);
+    }
+  }
+
+  // Accepting a guest needs the audio mixer: creating it here, in the click,
+  // lets the audio context start and swaps the shared audio track once.
+  async function acceptStageGuest(peerId: string): Promise<void> {
+    const audio = hostAudioRef.current;
+    const generation = activeGenerationRef.current;
+    if (!audio || generation === null || sourceSwitchRef.current || qualityChangeRef.current) return;
+    const token = {};
+    sourceSwitchRef.current = token;
+    try {
+      const mixed = await audio.ensureMixer();
+      if (!isCurrentGeneration(generation) || hostAudioRef.current !== audio) return;
+      if (mixed) await replaceBrowserStream(mixed, generation, token);
+      stageHost.decide(peerId, true);
+    } catch (error) {
+      debugError("stage", "host-mixer-failed", error);
+      stageHost.decide(peerId, false);
+      setNoticeValue({ kind: "key", key: "stage.audioUnavailable", target: "operation", comic: "warning", tone: "warn" });
     } finally {
       finishSourceSwitch(token);
     }
@@ -3796,6 +3854,18 @@ export function HostPage({
               />
             ) : null}
           </div>
+          {phase === "live" && stageCompositor ? (
+            <HostStagePanel
+              requests={stageHost.requests}
+              members={stageHost.membersSnapshot()}
+              full={stageHost.full}
+              busy={switchingSource || changingQuality}
+              labelFor={(peerId) => viewerLabelsRef.current.get(peerId) ?? t("stage.friend")}
+              onAccept={(peerId) => void acceptStageGuest(peerId)}
+              onDecline={(peerId) => stageHost.decide(peerId, false)}
+              onRemove={(peerId) => stageHost.remove(peerId)}
+            />
+          ) : null}
           <div className="lr-stage-notices" role="status" aria-live="polite">
             {details?.hasSourceAudio === false && stream ? (
               <Pill icon="speakerOff" label={t("host.noAudio")} comic="no-audio" tone="off" />
