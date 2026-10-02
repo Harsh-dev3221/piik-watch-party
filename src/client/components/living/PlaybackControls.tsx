@@ -15,7 +15,7 @@ import "./playback-controls.css";
 export function PlaybackControls({
   videoRef, stream, audioTrackKey, canPlay, theaterMode, onPlay,
   onToggleTheater, onReconnect, reconnectAvailable,
-  extraActions,
+  extraActions, pageFullscreen = false,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   stream: MediaStream | null;
@@ -27,6 +27,10 @@ export function PlaybackControls({
   onReconnect: () => void;
   reconnectAvailable: boolean;
   extraActions?: ReactNode;
+  /** Where the browser cannot make the stage fullscreen (iPhone), the
+   *  fullscreen button fills the window instead of opening the native player,
+   *  which cannot show the camera tiles. */
+  pageFullscreen?: boolean;
 }) {
   const { t, vis } = useCopy();
   const audioRef = useRef<ViewerAudio | null>(null);
@@ -52,7 +56,12 @@ export function PlaybackControls({
       video.pause();
     }
   };
+  const pageFallback = pageFullscreen && !document.fullscreenEnabled;
   const toggleFullscreen = () => {
+    if (pageFallback) {
+      onToggleTheater();
+      return;
+    }
     if (theaterMode) return;
     const video = videoRef.current as FullscreenVideo | null;
     if (!video) return;
@@ -158,12 +167,19 @@ export function PlaybackControls({
           hint={!picture.supported || picture.failed || (!picture.active && !canPlay) ? "hint-pip-unavailable" : picture.active ? "hint-pip-exit" : "hint-pip"}
           pressed={picture.active} disabled={!picture.supported || (!picture.active && !canPlay)}
           onClick={() => { void picture.toggle(); }} />
-        {!fullscreen.active ? <Btn icon={theaterMode ? "theaterExit" : "theater"}
+        {!fullscreen.active && !pageFallback ? <Btn icon={theaterMode ? "theaterExit" : "theater"}
           draw="playback-theater"
           title={theaterMode ? "viewer.theater.exit" : "viewer.theater"}
           hint={theaterMode ? "hint-theater-exit" : "hint-theater"}
           pressed={theaterMode} onClick={onToggleTheater} /> : null}
-        {fullscreen.supported && !theaterMode ? (
+        {pageFallback ? (
+          <Btn icon={theaterMode ? "contract" : "expand"}
+            draw="playback-fullscreen"
+            title={theaterMode ? "playback.exitFullscreen" : "playback.fullscreen"}
+            hint={theaterMode ? "hint-fullscreen-exit" : "hint-fullscreen"}
+            pressed={theaterMode}
+            onClick={toggleFullscreen} />
+        ) : fullscreen.supported && !theaterMode ? (
           <Btn icon={fullscreen.active ? "contract" : "expand"}
             draw="playback-fullscreen"
             title={fullscreenFailed ? "playback.fullscreenFailed" : fullscreen.active ? "playback.exitFullscreen"

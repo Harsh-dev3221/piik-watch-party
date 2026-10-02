@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { MAX_STAGE_PEERS } from "../../../shared/protocol";
 import type { StageMediaState, StageTile } from "../../media/stage-mesh";
@@ -56,21 +56,106 @@ function CameraTile({ tile, label }: { tile: StageTile; label: string }) {
 
 /**
  * Watch-party camera tiles. "side" sits beside the TV, "overlay" is a column
- * inside the TV for theater and fullscreen, "popout" fills a floating window.
- * A page renders the strip in exactly one place, so voices never play twice.
+ * inside the TV for theater and fullscreen, "float" is the phone version of
+ * that: small tiles over the full picture that can be dragged to any corner,
+ * as in a video call. "popout" fills a floating window. A page renders the
+ * strip in exactly one place, so voices never play twice.
  */
 export function CameraStrip({ tiles, labelFor, variant = "side" }: {
   tiles: StageTile[];
   labelFor: (tile: StageTile) => string;
-  variant?: "side" | "overlay" | "popout";
+  variant?: "side" | "overlay" | "float" | "popout";
 }) {
   const { t } = useCopy();
+  const drag = useFloatingCorner();
   if (tiles.length === 0) return null;
+  const floating = variant === "float";
   return (
-    <aside className={`lr-camera-strip is-${variant}`} aria-label={t("stage.title")}>
+    <aside className={`lr-camera-strip is-${variant}`} aria-label={t("stage.title")}
+      {...(floating ? drag.props : {})}>
       {tiles.map((tile) => <CameraTile key={tile.peerId} tile={tile} label={labelFor(tile)} />)}
     </aside>
   );
+}
+
+type Corner = "top-right" | "top-left" | "bottom-right" | "bottom-left";
+const CORNER_KEY = "piik.stage.corner";
+const DRAG_SLOP = 6;
+
+function readCorner(): Corner {
+  try {
+    const stored = localStorage.getItem(CORNER_KEY);
+    if (stored === "top-left" || stored === "bottom-right" || stored === "bottom-left") return stored;
+  } catch {
+    // Storage may be unavailable; the default corner still works.
+  }
+  return "top-right";
+}
+
+/** Drag the floating strip anywhere; on release it settles in the nearest corner. */
+function useFloatingCorner() {
+  const [corner, setCorner] = useState<Corner>(readCorner);
+  const start = useRef<{ x: number; y: number; id: number; moved: boolean } | null>(null);
+  const reset = (element: HTMLElement) => {
+    start.current = null;
+    element.style.transform = "";
+    element.classList.remove("is-dragging");
+  };
+  return {
+    props: {
+      "data-corner": corner,
+      onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+        // Buttons inside a tile (tap for sound) keep their own clicks.
+        if ((event.target as Element).closest("button")) return;
+        start.current = { x: event.clientX, y: event.clientY, id: event.pointerId, moved: false };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+        const origin = start.current;
+        if (!origin || origin.id !== event.pointerId) return;
+        const dx = event.clientX - origin.x;
+        const dy = event.clientY - origin.y;
+        if (!origin.moved && Math.hypot(dx, dy) < DRAG_SLOP) return;
+        origin.moved = true;
+        event.currentTarget.classList.add("is-dragging");
+        event.currentTarget.style.transform = `translate(${dx}px, ${dy}px)`;
+      },
+      onPointerUp: (event: ReactPointerEvent<HTMLElement>) => {
+        const origin = start.current;
+        const element = event.currentTarget;
+        if (!origin || origin.id !== event.pointerId) return;
+        if (origin.moved && element.parentElement) {
+          const box = element.getBoundingClientRect();
+          const area = element.parentElement.getBoundingClientRect();
+          const right = box.left + box.width / 2 > area.left + area.width / 2;
+          const bottom = box.top + box.height / 2 > area.top + area.height / 2;
+          const next: Corner = `${bottom ? "bottom" : "top"}-${right ? "right" : "left"}`;
+          setCorner(next);
+          try {
+            localStorage.setItem(CORNER_KEY, next);
+          } catch {
+            // Remembering the corner is a convenience only.
+          }
+        }
+        reset(element);
+      },
+      onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => reset(event.currentTarget),
+    },
+  };
+}
+
+/** Phones and tablets get the floating call layout in theater and fullscreen. */
+export function useTouchStage(): boolean {
+  const query = "(pointer: coarse), (max-width: 700px)";
+  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const update = () => setMatches(list.matches);
+    update();
+    list.addEventListener("change", update);
+    return () => list.removeEventListener("change", update);
+  }, []);
+  return matches;
 }
 
 type DocumentPictureInPictureApi = {

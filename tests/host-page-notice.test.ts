@@ -79,10 +79,9 @@ describe("host error notices", () => {
 });
 
 describe("shouldPauseLocalPreview", () => {
-  it("distinguishes local preview suspension from active focus", () => {
-    expect(shouldPauseLocalPreview("hidden", true)).toBe(true);
-    expect(shouldPauseLocalPreview("visible", false)).toBe(true);
-    expect(shouldPauseLocalPreview("visible", true)).toBe(false);
+  it("pauses only a hidden local preview, not an unfocused one", () => {
+    expect(shouldPauseLocalPreview("hidden")).toBe(true);
+    expect(shouldPauseLocalPreview("visible")).toBe(false);
   });
 });
 

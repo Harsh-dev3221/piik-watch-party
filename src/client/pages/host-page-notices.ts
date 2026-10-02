@@ -88,9 +88,10 @@ export function sourceSwitchNotice({
     : say("host.notice.sourceSwitch.ok");
 }
 
+// The preview keeps playing while it is on screen, even when another window
+// has focus: a watch-party Host keeps it beside the film they are playing.
 export function shouldPauseLocalPreview(
   visibilityState: DocumentVisibilityState,
-  hasFocus: boolean,
 ): boolean {
-  return visibilityState !== "visible" || !hasFocus;
+  return visibilityState !== "visible";
 }

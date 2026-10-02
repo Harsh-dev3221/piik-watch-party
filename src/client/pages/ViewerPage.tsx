@@ -46,6 +46,7 @@ import {
   StageSelfControls,
   useCameraPopout,
   useFullscreenActive,
+  useTouchStage,
   type StageSelfState,
 } from "../components/living/StagePanels";
 import { StageMesh, type StageTile } from "../media/stage-mesh";
@@ -288,6 +289,7 @@ export function ViewerPage({
   const [stageNotice, setStageNotice] = useState<CopyKey | null>(null);
   const cameraPopout = useCameraPopout();
   const fullscreenActive = useFullscreenActive();
+  const touchStage = useTouchStage();
   useEffect(() => () => stageMesh.dispose(), [stageMesh]);
   useEffect(() => {
     stageMesh.setParticipants((participantPresence ?? []).map((participant) => participant.peerId));
@@ -2328,6 +2330,7 @@ export function ViewerPage({
               stream={remoteMedia?.stream ?? null}
               audioTrackKey={remoteMedia?.audioTrackKey}
               theaterMode={theaterMode}
+              pageFullscreen={stageMesh.tiles().length > 0}
               onToggleTheater={() => setTheaterMode((current) => !current)}
               onReconnect={retryConnection}
               reconnectAvailable={reconnectAvailable}
@@ -2380,7 +2383,7 @@ export function ViewerPage({
                 />
               )}
             {(theaterMode || fullscreenActive) && !cameraPopout.popout ? (
-              <CameraStrip variant="overlay" tiles={stageMesh.tiles()} labelFor={stageTileLabel} />
+              <CameraStrip variant={touchStage ? "float" : "overlay"} tiles={stageMesh.tiles()} labelFor={stageTileLabel} />
             ) : null}
           </StageTv>
           {!theaterMode && !fullscreenActive && !cameraPopout.popout ? (

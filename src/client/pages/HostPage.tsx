@@ -698,10 +698,7 @@ export function HostPage({
       if (!video) {
         return;
       }
-      const shouldPause = shouldPauseLocalPreview(
-        document.visibilityState,
-        document.hasFocus(),
-      );
+      const shouldPause = shouldPauseLocalPreview(document.visibilityState);
       if (document.visibilityState !== "visible") {
         resetSenderQualityAuthority();
       } else {

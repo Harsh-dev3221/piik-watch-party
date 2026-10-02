@@ -2270,6 +2270,41 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
   .lr-camera-strip.is-overlay { top: auto; left: 0; width: auto; height: 24%; flex-direction: row; }
   .lr-camera-strip.is-overlay .lr-camera-tile { height: 100%; aspect-ratio: 4 / 3; }
 }
+/* Phones: the picture fills the screen and the cameras float over it as
+   small call tiles, draggable to any corner (bottom corners clear the
+   playback controls). */
+.lr-camera-strip.is-float {
+  --float-gap: 12px;
+  position: absolute;
+  z-index: 3;
+  flex: none;
+  gap: 8px;
+  width: auto;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 160ms ease-out;
+}
+.lr-camera-strip.is-float.is-dragging { cursor: grabbing; transition: none; }
+.lr-camera-strip.is-float[data-corner^="top"] { top: max(var(--float-gap), env(safe-area-inset-top)); }
+.lr-camera-strip.is-float[data-corner^="bottom"] { bottom: max(72px, env(safe-area-inset-bottom)); }
+.lr-camera-strip.is-float[data-corner$="right"] { right: max(var(--float-gap), env(safe-area-inset-right)); }
+.lr-camera-strip.is-float[data-corner$="left"] { left: max(var(--float-gap), env(safe-area-inset-left)); }
+.lr-camera-strip.is-float .lr-camera-tile {
+  flex: none;
+  width: min(27vw, 150px);
+  aspect-ratio: 3 / 4;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgb(0 0 0 / .45);
+}
+.lr-camera-strip.is-float .lr-camera-tile figcaption { left: 6px; bottom: 6px; padding: 1px 6px; font-size: 11px; }
+.lr-camera-strip.is-float .lr-camera-tile-placeholder span { width: 40px; height: 40px; font-size: 18px; }
+@media (orientation: landscape) {
+  .lr-camera-strip.is-float .lr-camera-tile { width: auto; height: min(28vh, 150px); }
+  .lr-camera-strip.is-float[data-corner^="bottom"] { bottom: max(64px, env(safe-area-inset-bottom)); }
+}
 /* Pop-out window: the strip fills the floating window. */
 body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-family: var(--font); }
 .lr-camera-strip.is-popout { width: 100%; }
