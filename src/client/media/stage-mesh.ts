@@ -2,6 +2,7 @@ import type { ClientMessage, SignalPayload } from "../../shared/protocol";
 import { debugError } from "../lib/debug";
 import { createOpaqueId } from "../lib/opaque-id";
 import type { SignalCandidate } from "../webrtc/nat-prediction";
+import { applyVideoCodecPreference, automaticVideoCodecPreference } from "../webrtc/video-codec";
 
 /** Camera and microphone state a publisher shares with its viewers. */
 export type StageMediaState = { camera: boolean; microphone: boolean };
@@ -35,7 +36,10 @@ type PendingOffer = {
   description: RTCSessionDescriptionInit;
   candidates: (SignalCandidate | null)[];
 };
-const CAMERA_MAX_BITRATE = 1_200_000;
+// Tiles are at most a few hundred pixels wide, so 540p at 24 fps is sharp
+// there and keeps every per-receiver encode cheap.
+const CAMERA_MAX_BITRATE = 900_000;
+const CAMERA_MAX_FRAMERATE = 24;
 
 function candidateForSignal(candidate: RTCIceCandidate | null): SignalCandidate | null {
   if (!candidate) return null;
@@ -108,7 +112,8 @@ export class StageMesh {
   async startLocal(): Promise<void> {
     if (this.local || this.disposed) return;
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
+      video: { facingMode: { ideal: "user" }, width: { ideal: 960 }, height: { ideal: 540 },
+        frameRate: { ideal: CAMERA_MAX_FRAMERATE, max: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     if (this.disposed) {
@@ -249,13 +254,18 @@ export class StageMesh {
     const link = this.newLink("out", peerId, connectionId);
     const { connection } = link;
     for (const track of local.getTracks()) {
-      // Faces at tile size: 720p within a bounded bitrate per receiver. Under
-      // pressure the browser lowers resolution first and keeps motion smooth.
-      connection.addTransceiver(track, {
+      // Under pressure the browser lowers resolution first and keeps motion
+      // smooth.
+      const transceiver = connection.addTransceiver(track, {
         direction: "sendonly",
         streams: [local],
-        ...(track.kind === "video" ? { sendEncodings: [{ maxBitrate: CAMERA_MAX_BITRATE, maxFramerate: 30 }] } : {}),
+        ...(track.kind === "video"
+          ? { sendEncodings: [{ maxBitrate: CAMERA_MAX_BITRATE, maxFramerate: CAMERA_MAX_FRAMERATE }] } : {}),
       });
+      // H.264 is hardware encoded and decoded on Macs and iPhones; VP8 runs
+      // in software in the page and, with the screen share alongside, made
+      // the whole browser stutter. VP8 stays as the fallback.
+      if (track.kind === "video") applyVideoCodecPreference(transceiver, automaticVideoCodecPreference("h264"));
     }
     for (const sender of connection.getSenders()) {
       if (sender.track?.kind !== "video") continue;
