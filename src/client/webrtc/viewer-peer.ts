@@ -72,6 +72,21 @@ export interface ViewerMediaPeer {
   dispose(): void;
 }
 
+// A watch party favours smooth playback over call-like latency. A deeper
+// jitter buffer rides out Wi-Fi bursts that would otherwise drop or freeze
+// frames; a few hundred milliseconds go unnoticed while watching a film.
+const SCREEN_JITTER_BUFFER_TARGET_MS = 300;
+
+function holdSmoothPlayout(receiver: RTCRtpReceiver | undefined): void {
+  const target = receiver as (RTCRtpReceiver & { jitterBufferTarget?: number | null }) | undefined;
+  if (!target || !("jitterBufferTarget" in target)) return;
+  try {
+    target.jitterBufferTarget = SCREEN_JITTER_BUFFER_TARGET_MS;
+  } catch {
+    // An engine that rejects the hint keeps its own adaptive buffer.
+  }
+}
+
 export class ViewerPeer implements ViewerMediaPeer {
   private connection: RTCPeerConnection | null = null;
   private connectionLifetime: AbortController | null = null;
@@ -318,6 +333,7 @@ export class ViewerPeer implements ViewerMediaPeer {
       if (!this.remoteStream.getTrackById(event.track.id)) {
         this.remoteStream.addTrack(event.track);
       }
+      holdSmoothPlayout(event.receiver);
       this.events.onStream(this.remoteStream);
     });
     connection.addEventListener("connectionstatechange", () => {
