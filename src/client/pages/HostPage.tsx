@@ -3615,12 +3615,141 @@ export function HostPage({
         }
       />
 
-      <main className={`lr-room${theaterMode ? " is-theater is-host-theater" : ""}`}>
+      <main className={`lr-room is-host-layout${theaterMode ? " is-theater is-host-theater" : ""}`}>
         <h1 className="visually-hidden">
           {t("host.title", { name: hostPresence?.displayName ?? displayName })}
         </h1>
+        <div className="lr-deck lr-host-topbar">
+          <Row>
+            {room ? (
+              <RowGroup>
+                <FieldCap k="common.roomCode" />
+                <RoomChip
+                  roomId={room.roomId}
+                  onReplace={replaceCurrentRoom}
+                  replaceDisabled={phase === "starting" || roomMutating}
+                />
+                {activeCodeEntryPolicy ? (
+                  <RoomAdmissionBadge
+                    policy={activeCodeEntryPolicy}
+                    passwordEnabled={viewerPasswordEnabled}
+                  />
+                ) : null}
+              </RowGroup>
+            ) : null}
+            <span className="lr-spacer" />
+            <div className="lr-host-personal-controls">
+              <div className="lr-row-group lr-group-name lr-host-identity-slot">
+                {editingDisplayName ? (
+                  <form
+                    style={{ display: "contents" }}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      commitDisplayName();
+                    }}
+                  >
+                    <span className="lr-input lr-name-editor">
+                      <input
+                        id="host-display-name"
+                        type="text"
+                        value={displayNameDraft}
+                        maxLength={96}
+                        autoComplete="nickname"
+                        autoFocus
+                        aria-label={t("host.name")}
+                        aria-invalid={displayNameError ? "true" : undefined}
+                        onChange={(event) => {
+                          setDisplayNameDraft(event.target.value);
+                          setDisplayNameError(null);
+                        }}
+                      />
+                    </span>
+                    <Btn
+                      icon="check"
+                      title="host.nameSave"
+                      hint="hint-rename"
+                      type="submit"
+                      disabled={displayNameDraft === displayName}
+                    />
+                    <Btn
+                      icon="x"
+                      title="host.nameCancel"
+                      hint="hint-close"
+                      onClick={() => {
+                        setDisplayNameDraft(displayName);
+                        setDisplayNameError(null);
+                        setEditingDisplayName(false);
+                      }}
+                    />
+                  </form>
+                ) : (
+                  <>
+                    <NameTag
+                      name={displayName}
+                      identity={hostIdentity}
+                    />
+                    <Btn
+                      icon="pencil"
+                      cap="common.edit"
+                      title="host.nameEdit"
+                      hint="hint-rename"
+                      onClick={() => {
+                        setDisplayNameDraft(displayName);
+                        setDisplayNameError(null);
+                        setEditingDisplayName(true);
+                      }}
+                    />
+                  </>
+                )}
+                {displayNameError ? (
+                  <Pill
+                    icon="alert"
+                    tone="bad"
+                    label={displayNameError}
+                    alert
+                    comic="name-invalid"
+                  />
+                ) : null}
+              </div>
+              <div className="lr-row-group lr-group-actions lr-host-diagnostics-slot">
+                <Btn
+                  icon="gauge"
+                  cap="host.details"
+                  title={
+                    showConnectionDetails
+                      ? "host.details.hide"
+                      : "host.details"
+                  }
+                  hint={showConnectionDetails ? "hint-collapse" : "hint-details"}
+                  tone={showConnectionDetails ? "on" : undefined}
+                  expanded={showConnectionDetails}
+                  controls="host-details-panel host-viewer-overview"
+                  disabled={!hostDiagnosticsAvailable}
+                  onClick={() =>
+                    setShowConnectionDetails((current) => !current)
+                  }
+                />
+                <Btn
+                  icon="network"
+                  cap="host.topology"
+                  title={
+                    showTopology
+                      ? "host.topology.hide"
+                      : "host.topology.show"
+                  }
+                  hint={showTopology ? "hint-collapse" : "hint-topology"}
+                  tone={showTopology ? "on" : undefined}
+                  expanded={showTopology}
+                  controls="room-topology"
+                  onClick={() => setShowTopology((current) => !current)}
+                />
+              </div>
+
+            </div>
+          </Row>
+        </div>
         <div className="lr-scene">
-          <div className="lr-watch-party">
+          <div className="lr-host-stage">
           <StageTv
             live={phase === "live"}
             hasEntry={
@@ -3753,19 +3882,15 @@ export function HostPage({
               />
             ) : null}
           </StageTv>
-          {cameraPopout.popout ? createPortal(
-            <CameraStrip variant="popout" tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />,
-            cameraPopout.popout.document.body,
-          ) : <CameraStrip tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />}
-          </div>
-          {/* The dock is layout-neutral; theater moves it into the side column. */}
-          <div className="lr-host-dock">
-          <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
+          {/* One control bar: sharing, then the Host's own camera. */}
+          <div className="lr-host-bar lr-media-controls">
+          <div className="lr-host-share-controls" role="group" aria-label={t("host.shareControls")}>
             {phase === "live" ? <>
-              <HostMicrophone enabled={microphoneEnabled} pending={microphonePending}
+              {/* On camera, the Host's voice already travels with the camera. */}
+              {hostCameraState !== "live" ? <HostMicrophone enabled={microphoneEnabled} pending={microphonePending}
                 unavailable={nativeActive && !nativeClientRef.current?.health.nativeMedia.microphone} paused={sharingPaused} disabled={switchingSource || changingQuality}
                 volume={microphoneVolume}
-                onToggle={() => void changeMicrophone(!microphoneEnabled, microphoneDevices[nativeActive ? "native" : "browser"])} />
+                onToggle={() => void changeMicrophone(!microphoneEnabled, microphoneDevices[nativeActive ? "native" : "browser"])} /> : null}
               <Btn
                 icon={sharingPaused ? "play" : "pause"}
                 cap={sharingPaused ? "host.resume" : "host.pause"}
@@ -3828,6 +3953,7 @@ export function HostPage({
             ) : null}
           </div>
           {room ? <>
+            <span className="lr-host-bar-divider" aria-hidden="true" />
             <StageSelfControls host state={hostCameraState} notice={hostCameraNotice} media={stageMesh.media}
               popout={{
                 available: cameraPopout.supported && stageMesh.tiles().length > 0,
@@ -3836,16 +3962,6 @@ export function HostPage({
               }}
               onStart={() => void startHostCamera()} onStop={stopHostCamera}
               onCamera={(enabled) => stageMesh.setCamera(enabled)} onMicrophone={(enabled) => stageMesh.setMicrophone(enabled)} />
-            <HostStagePanel requests={stageRequests} guests={stageGuests} labelFor={stagePeerLabel}
-              onAccept={(peerId) => {
-                setStageRequests((requests) => requests.filter((id) => id !== peerId));
-                signalRef.current?.send({ type: "stage-decision", peerId, accept: true });
-              }}
-              onDecline={(peerId) => {
-                setStageRequests((requests) => requests.filter((id) => id !== peerId));
-                signalRef.current?.send({ type: "stage-decision", peerId, accept: false });
-              }}
-              onRemove={(peerId) => signalRef.current?.send({ type: "stage-remove", peerId })} />
           </> : null}
           </div>
           <div className="lr-stage-notices" role="status" aria-live="polite">
@@ -4170,6 +4286,24 @@ export function HostPage({
               </div>
             </>}
           />
+          </div>
+          <aside className="lr-host-side" aria-label={t("stage.title")}>
+          {cameraPopout.popout ? createPortal(
+            <CameraStrip variant="popout" tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />,
+            cameraPopout.popout.document.body,
+          ) : <CameraStrip tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />}
+          {room ? (
+            <HostStagePanel requests={stageRequests} guests={stageGuests} labelFor={stagePeerLabel}
+              onAccept={(peerId) => {
+                setStageRequests((requests) => requests.filter((id) => id !== peerId));
+                signalRef.current?.send({ type: "stage-decision", peerId, accept: true });
+              }}
+              onDecline={(peerId) => {
+                setStageRequests((requests) => requests.filter((id) => id !== peerId));
+                signalRef.current?.send({ type: "stage-decision", peerId, accept: false });
+              }}
+              onRemove={(peerId) => signalRef.current?.send({ type: "stage-remove", peerId })} />
+          ) : null}
           <RoomInteractions session={room ? interactionSession : null}
             view="host"
             host={{
@@ -4200,136 +4334,10 @@ export function HostPage({
               setSelectedPawn((current) => (current === key ? null : key))
             }
           />
+          </aside>
         </div>
 
         <div className="lr-deck">
-          <Row>
-            {room ? (
-              <RowGroup>
-                <FieldCap k="common.roomCode" />
-                <RoomChip
-                  roomId={room.roomId}
-                  onReplace={replaceCurrentRoom}
-                  replaceDisabled={phase === "starting" || roomMutating}
-                />
-                {activeCodeEntryPolicy ? (
-                  <RoomAdmissionBadge
-                    policy={activeCodeEntryPolicy}
-                    passwordEnabled={viewerPasswordEnabled}
-                  />
-                ) : null}
-              </RowGroup>
-            ) : null}
-            <span className="lr-spacer" />
-            <div className="lr-host-personal-controls">
-              <div className="lr-row-group lr-group-name lr-host-identity-slot">
-                {editingDisplayName ? (
-                  <form
-                    style={{ display: "contents" }}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      commitDisplayName();
-                    }}
-                  >
-                    <span className="lr-input lr-name-editor">
-                      <input
-                        id="host-display-name"
-                        type="text"
-                        value={displayNameDraft}
-                        maxLength={96}
-                        autoComplete="nickname"
-                        autoFocus
-                        aria-label={t("host.name")}
-                        aria-invalid={displayNameError ? "true" : undefined}
-                        onChange={(event) => {
-                          setDisplayNameDraft(event.target.value);
-                          setDisplayNameError(null);
-                        }}
-                      />
-                    </span>
-                    <Btn
-                      icon="check"
-                      title="host.nameSave"
-                      hint="hint-rename"
-                      type="submit"
-                      disabled={displayNameDraft === displayName}
-                    />
-                    <Btn
-                      icon="x"
-                      title="host.nameCancel"
-                      hint="hint-close"
-                      onClick={() => {
-                        setDisplayNameDraft(displayName);
-                        setDisplayNameError(null);
-                        setEditingDisplayName(false);
-                      }}
-                    />
-                  </form>
-                ) : (
-                  <>
-                    <NameTag
-                      name={displayName}
-                      identity={hostIdentity}
-                    />
-                    <Btn
-                      icon="pencil"
-                      cap="common.edit"
-                      title="host.nameEdit"
-                      hint="hint-rename"
-                      onClick={() => {
-                        setDisplayNameDraft(displayName);
-                        setDisplayNameError(null);
-                        setEditingDisplayName(true);
-                      }}
-                    />
-                  </>
-                )}
-                {displayNameError ? (
-                  <Pill
-                    icon="alert"
-                    tone="bad"
-                    label={displayNameError}
-                    alert
-                    comic="name-invalid"
-                  />
-                ) : null}
-              </div>
-              <div className="lr-row-group lr-group-actions lr-host-diagnostics-slot">
-                <Btn
-                  icon="gauge"
-                  cap="host.details"
-                  title={
-                    showConnectionDetails
-                      ? "host.details.hide"
-                      : "host.details"
-                  }
-                  hint={showConnectionDetails ? "hint-collapse" : "hint-details"}
-                  tone={showConnectionDetails ? "on" : undefined}
-                  expanded={showConnectionDetails}
-                  controls="host-details-panel host-viewer-overview"
-                  disabled={!hostDiagnosticsAvailable}
-                  onClick={() =>
-                    setShowConnectionDetails((current) => !current)
-                  }
-                />
-                <Btn
-                  icon="network"
-                  cap="host.topology"
-                  title={
-                    showTopology
-                      ? "host.topology.hide"
-                      : "host.topology.show"
-                  }
-                  hint={showTopology ? "hint-collapse" : "hint-topology"}
-                  tone={showTopology ? "on" : undefined}
-                  expanded={showTopology}
-                  controls="room-topology"
-                  onClick={() => setShowTopology((current) => !current)}
-                />
-              </div>
-
-            </div>
-          </Row>
 
           {room ? (
             <Row label={t("host.policy")}>

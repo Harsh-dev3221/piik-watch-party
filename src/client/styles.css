@@ -2355,47 +2355,85 @@ body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-
   .lr-camera-strip.is-side .lr-camera-tile { flex: 0 0 min(44vw, 220px); }
 }
 
-/* Host theater: the live preview fills the window; cameras and the Host's
-   controls share a side column, video front and centre. */
-.lr-host-dock { display: contents; }
-.lr-room.is-host-theater .lr-scene {
+/* Host layout: a slim room bar on top, the stage with one control bar on the
+   left, cameras / friends / chat in a side column, room panels below. */
+.lr-room.is-host-layout { width: min(1440px, 100%); }
+.lr-host-topbar { margin: 0 0 16px; }
+.lr-room.is-host-layout .lr-scene {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 24vw, 340px);
+  gap: 20px;
+  align-items: start;
+}
+.lr-host-stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lr-room.is-host-layout .lr-host-stage > .lr-tv { width: 100%; }
+.lr-host-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lr-host-side > .lr-camera-strip.is-side { flex: none; width: 100%; }
+.lr-host-side .lr-room-interactions { width: 100%; }
+.lr-host-side .lr-stage-panel { width: 100%; margin: 0; }
+.lr-host-side .lr-stage-panel .lr-btn { min-width: 40px; height: 40px; padding: 0 10px; border-width: 1px; box-shadow: none; }
+.lr-host-side .lr-stage-panel .lr-cap { display: none; }
+
+/* One control bar, one button size: sharing, then the Host's camera, then
+   settings and stop. Names live in each button's tooltip. */
+.lr-host-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 6px;
+  border: 1px solid var(--control-edge);
+  border-radius: 20px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.lr-host-bar > .lr-host-share-controls,
+.lr-host-bar > .lr-stage-self { display: contents; }
+.lr-host-bar .lr-btn { width: 44px; min-width: 44px; height: 44px; padding: 0; }
+.lr-host-bar .lr-cap { display: none; }
+.lr-host-bar-divider { order: 5; width: 1px; height: 28px; margin: 0 6px; background: var(--control-edge); }
+.lr-host-bar > .lr-stage-self > * { order: 6; }
+.lr-host-bar .lr-stage-self-status { order: 7; padding: 0 6px; font-size: 12px; }
+.lr-host-bar .lr-comic-tip-wrap:has([aria-controls="host-advanced-door"]) { order: 8; }
+.lr-host-bar .lr-comic-tip-wrap:has(#host-stop-share, #host-cancel-share) {
+  order: 9;
+  margin-inline-start: 4px;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--control-edge);
+}
+@media (max-width: 900px) {
+  .lr-room.is-host-layout .lr-scene { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Host theater: the preview fills the window with the bar under it; the side
+   column keeps cameras, friends and chat. */
+.lr-room.is-host-theater .lr-scene {
   grid-template-columns: minmax(0, 1fr) clamp(240px, 22vw, 340px);
-  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  align-items: stretch;
   height: 100%;
 }
-.lr-room.is-host-theater .lr-watch-party { display: contents; }
-.lr-room.is-host-theater .lr-watch-party > .lr-tv { grid-column: 1; grid-row: 1 / -1; min-height: 0; }
-/* Only the stage, the dock, the chat toggle and notices stay in theater. */
-.lr-room.is-host-theater .lr-scene > :not(.lr-watch-party, .lr-host-dock, .lr-room-interactions, .lr-stage-notices) { display: none; }
-.lr-room.is-host-theater .lr-camera-strip.is-side {
-  grid-column: 2;
-  grid-row: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 72px 14px 4px;
-}
-.lr-room.is-host-theater .lr-host-dock {
-  display: flex;
-  grid-column: 2;
-  grid-row: 2;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 60dvh;
-  overflow-y: auto;
-  padding: 10px 14px 16px;
-}
-.lr-room.is-host-theater .lr-host-dock > * { margin: 0; }
-.lr-room.is-host-theater .lr-host-share-controls { flex-wrap: wrap; justify-content: center; }
+.lr-room.is-host-theater .lr-host-stage { gap: 0; height: 100%; min-height: 0; }
+.lr-room.is-host-theater .lr-host-stage > .lr-tv { flex: 1 1 auto; height: auto; min-height: 0; }
+.lr-room.is-host-theater .lr-host-stage > :not(.lr-tv, .lr-host-bar, .lr-stage-notices) { display: none; }
+.lr-room.is-host-theater .lr-host-bar { margin: 10px auto 12px; }
 /* Settings open in the page below the stage, which theater hides. */
-.lr-room.is-host-theater .lr-host-share-controls .lr-btn[aria-controls="host-advanced-door"] { display: none; }
+.lr-room.is-host-theater .lr-host-bar .lr-comic-tip-wrap:has([aria-controls="host-advanced-door"]) { display: none; }
+.lr-room.is-host-theater .lr-host-side {
+  height: 100%;
+  overflow-y: auto;
+  padding: 72px 14px 14px;
+  background: color-mix(in srgb, var(--paper) 5%, var(--stage));
+}
 .lr-room.is-host-theater .lr-stage-notices { left: calc((100% - clamp(240px, 22vw, 340px)) / 2); }
 @media (max-width: 700px) {
-  .lr-room.is-host-theater .lr-scene { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
-  .lr-room.is-host-theater .lr-watch-party > .lr-tv { grid-row: 1; }
-  .lr-room.is-host-theater .lr-camera-strip.is-side { grid-column: 1; grid-row: 2; flex-direction: row; overflow-x: auto; padding: 8px 12px 0; }
-  .lr-room.is-host-theater .lr-camera-strip.is-side .lr-camera-tile { flex: 0 0 min(40vw, 180px); }
-  .lr-room.is-host-theater .lr-host-dock { grid-column: 1; grid-row: 3; max-height: 40dvh; }
+  .lr-room.is-host-theater .lr-scene { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .lr-room.is-host-theater .lr-host-side { height: auto; max-height: 34dvh; padding: 8px 12px; }
   .lr-room.is-host-theater .lr-stage-notices { left: 50%; }
 }
 
