@@ -135,6 +135,8 @@ export const zh = {
   "stage.startCamera": "打开我的摄像头",
   "stage.stopCamera": "关闭我的摄像头",
   "stage.you": "你",
+  "stage.popOut": "弹出摄像头窗口",
+  "stage.popIn": "收回摄像头窗口",
   "host.microphone.enable": "开启麦克风",
   "host.microphone.label": "麦克风",
   "host.microphone.settings": "麦克风设置",

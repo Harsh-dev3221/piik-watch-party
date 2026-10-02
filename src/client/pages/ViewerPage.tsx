@@ -40,8 +40,15 @@ import {
   StageTv,
 } from "../components/living/Stage";
 import { StatusIndicator } from "../components/living/StatusIndicator";
-import { CameraStrip, StageSelfControls, type StageSelfState } from "../components/living/StagePanels";
-import { StageMesh } from "../media/stage-mesh";
+import { createPortal } from "react-dom";
+import {
+  CameraStrip,
+  StageSelfControls,
+  useCameraPopout,
+  useFullscreenActive,
+  type StageSelfState,
+} from "../components/living/StagePanels";
+import { StageMesh, type StageTile } from "../media/stage-mesh";
 import { Tooltip } from "../components/living/Tooltip";
 import { PlaybackControls } from "../components/living/PlaybackControls";
 import { useTheaterMode } from "../components/living/use-theater-mode";
@@ -279,6 +286,8 @@ export function ViewerPage({
   const stageStateRef = useRef(stageState);
   stageStateRef.current = stageState;
   const [stageNotice, setStageNotice] = useState<CopyKey | null>(null);
+  const cameraPopout = useCameraPopout();
+  const fullscreenActive = useFullscreenActive();
   useEffect(() => () => stageMesh.dispose(), [stageMesh]);
   useEffect(() => {
     stageMesh.setParticipants((participantPresence ?? []).map((participant) => participant.peerId));
@@ -290,6 +299,7 @@ export function ViewerPage({
     for (const viewer of snapshot.viewers) labels.set(viewer.peerId, viewer.label);
     return labels;
   }, [participantPresence]);
+  const stageTileLabel = (tile: StageTile) => tile.self ? t("stage.you") : stageLabels.get(tile.peerId) ?? t("stage.friend");
 
   function requestStage(): void {
     if (stageSendRef.current?.({ type: "stage-request" })) {
@@ -2369,12 +2379,25 @@ export function ViewerPage({
                   waiting={viewerStatus.overlay?.waiting}
                 />
               )}
+            {(theaterMode || fullscreenActive) && !cameraPopout.popout ? (
+              <CameraStrip variant="overlay" tiles={stageMesh.tiles()} labelFor={stageTileLabel} />
+            ) : null}
           </StageTv>
-          <CameraStrip tiles={stageMesh.tiles()}
-            labelFor={(tile) => tile.self ? t("stage.you") : stageLabels.get(tile.peerId) ?? t("stage.friend")} />
+          {!theaterMode && !fullscreenActive && !cameraPopout.popout ? (
+            <CameraStrip tiles={stageMesh.tiles()} labelFor={stageTileLabel} />
+          ) : null}
+          {cameraPopout.popout ? createPortal(
+            <CameraStrip variant="popout" tiles={stageMesh.tiles()} labelFor={stageTileLabel} />,
+            cameraPopout.popout.document.body,
+          ) : null}
           </div>
           {selfPeerId ? (
             <StageSelfControls host={false} state={stageState} notice={stageNotice} media={stageMesh.media}
+              popout={{
+                available: cameraPopout.supported && stageMesh.tiles().length > 0,
+                active: !!cameraPopout.popout,
+                onToggle: () => void (cameraPopout.popout ? cameraPopout.close() : cameraPopout.open()),
+              }}
               onStart={requestStage} onStop={() => leaveStage()}
               onCamera={(enabled) => stageMesh.setCamera(enabled)} onMicrophone={(enabled) => stageMesh.setMicrophone(enabled)} />
           ) : null}

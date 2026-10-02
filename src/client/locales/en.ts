@@ -135,6 +135,8 @@ export const en: Record<CopyKey, string> = {
   "stage.startCamera": "Turn on my camera",
   "stage.stopCamera": "Turn off my camera",
   "stage.you": "You",
+  "stage.popOut": "Pop out cameras",
+  "stage.popIn": "Bring cameras back",
   "host.microphone.enable": "Turn on microphone",
   "host.microphone.label": "Microphone",
   "host.microphone.settings": "Microphone settings",

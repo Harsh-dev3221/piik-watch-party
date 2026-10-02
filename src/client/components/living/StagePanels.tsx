@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MAX_STAGE_PEERS } from "../../../shared/protocol";
 import type { StageMediaState, StageTile } from "../../media/stage-mesh";
@@ -54,15 +54,74 @@ function CameraTile({ tile, label }: { tile: StageTile; label: string }) {
   );
 }
 
-/** Watch-party camera tiles, shown beside the shared screen. */
-export function CameraStrip({ tiles, labelFor }: { tiles: StageTile[]; labelFor: (tile: StageTile) => string }) {
+/**
+ * Watch-party camera tiles. "side" sits beside the TV, "overlay" is a column
+ * inside the TV for theater and fullscreen, "popout" fills a floating window.
+ * A page renders the strip in exactly one place, so voices never play twice.
+ */
+export function CameraStrip({ tiles, labelFor, variant = "side" }: {
+  tiles: StageTile[];
+  labelFor: (tile: StageTile) => string;
+  variant?: "side" | "overlay" | "popout";
+}) {
   const { t } = useCopy();
   if (tiles.length === 0) return null;
   return (
-    <aside className="lr-camera-strip" aria-label={t("stage.title")}>
+    <aside className={`lr-camera-strip is-${variant}`} aria-label={t("stage.title")}>
       {tiles.map((tile) => <CameraTile key={tile.peerId} tile={tile} label={labelFor(tile)} />)}
     </aside>
   );
+}
+
+type DocumentPictureInPictureApi = {
+  requestWindow(options?: { width?: number; height?: number }): Promise<Window>;
+};
+
+/**
+ * A floating always-on-top window for the camera tiles (Document Picture-in-
+ * Picture, Chromium desktop). The page portals the strip into it.
+ */
+export function useCameraPopout() {
+  const [popout, setPopout] = useState<Window | null>(null);
+  const supported = typeof window !== "undefined" && "documentPictureInPicture" in window;
+  const open = useCallback(async () => {
+    const api = (window as Window & { documentPictureInPicture?: DocumentPictureInPictureApi }).documentPictureInPicture;
+    if (!api) return;
+    const floating = await api.requestWindow({ width: 300, height: 660 });
+    for (const node of document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style')) {
+      if (node instanceof HTMLLinkElement) {
+        const link = floating.document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = node.href;
+        floating.document.head.appendChild(link);
+      } else {
+        floating.document.head.appendChild(node.cloneNode(true));
+      }
+    }
+    const theme = document.documentElement.dataset.theme;
+    if (theme) floating.document.documentElement.dataset.theme = theme;
+    floating.document.title = document.title;
+    floating.document.body.className = "lr-camera-popout";
+    floating.addEventListener("pagehide", () => setPopout(null), { once: true });
+    setPopout(floating);
+  }, []);
+  const close = useCallback(() => {
+    popout?.close();
+    setPopout(null);
+  }, [popout]);
+  useEffect(() => () => popout?.close(), [popout]);
+  return { supported, popout, open, close };
+}
+
+/** True while any element of this page is fullscreen. */
+export function useFullscreenActive(): boolean {
+  const [active, setActive] = useState(() => typeof document !== "undefined" && !!document.fullscreenElement);
+  useEffect(() => {
+    const update = () => setActive(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", update);
+    return () => document.removeEventListener("fullscreenchange", update);
+  }, []);
+  return active;
 }
 
 /** Host: pending "go on camera" requests and the guests currently on camera. */
@@ -107,7 +166,8 @@ export function HostStagePanel({ requests, guests, labelFor, onAccept, onDecline
 export type StageSelfState = "idle" | "requesting" | "starting" | "live" | "declined" | "removed" | "failed";
 
 /** Own camera controls: start (or ask), then camera, microphone and stop. */
-export function StageSelfControls({ host, state, notice, media, onStart, onStop, onCamera, onMicrophone }: {
+export function StageSelfControls({ host, state, notice, media, onStart, onStop, onCamera, onMicrophone, popout }: {
+  popout?: { available: boolean; active: boolean; onToggle: () => void };
   host: boolean;
   state: StageSelfState;
   notice: CopyKey | null;
@@ -118,8 +178,13 @@ export function StageSelfControls({ host, state, notice, media, onStart, onStop,
   onMicrophone: (enabled: boolean) => void;
 }) {
   const { t } = useCopy();
+  const popoutButton = popout?.available ? (
+    <Btn icon={popout.active ? "pipExit" : "pip"} cap={popout.active ? "stage.popIn" : "stage.popOut"} title={popout.active ? "stage.popIn" : "stage.popOut"}
+      pressed={popout.active} onClick={popout.onToggle} />
+  ) : null;
   return (
     <div className="lr-stage-self" role="group" aria-label={t("stage.title")}>
+      {popoutButton}
       {state === "live" ? <>
         <Btn icon={media.camera ? "camera" : "cameraOff"} cap="stage.camera" pressed={media.camera}
           title={media.camera ? "stage.cameraTurnOff" : "stage.cameraTurnOn"} onClick={() => onCamera(!media.camera)} />

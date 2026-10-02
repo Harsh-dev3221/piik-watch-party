@@ -116,7 +116,14 @@ import {
   type SignalingTerminationReason,
 } from "../lib/signaling";
 import { labelParticipantSnapshot } from "../lib/viewer-presence";
-import { CameraStrip, HostStagePanel, StageSelfControls, type StageSelfState } from "../components/living/StagePanels";
+import { createPortal } from "react-dom";
+import {
+  CameraStrip,
+  HostStagePanel,
+  StageSelfControls,
+  useCameraPopout,
+  type StageSelfState,
+} from "../components/living/StagePanels";
 import { StageMesh } from "../media/stage-mesh";
 import {
   applyCaptureProfile,
@@ -633,6 +640,7 @@ export function HostPage({
   const [stageRequests, setStageRequests] = useState<string[]>([]);
   const [hostCameraState, setHostCameraState] = useState<StageSelfState>("idle");
   const [hostCameraNotice, setHostCameraNotice] = useState<CopyKey | null>(null);
+  const cameraPopout = useCameraPopout();
   useEffect(() => () => stageMesh.dispose(), [stageMesh]);
   useEffect(() => {
     // Leaving or losing the room ends the Host camera with it.
@@ -3741,7 +3749,10 @@ export function HostPage({
               />
             ) : null}
           </StageTv>
-          <CameraStrip tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />
+          {cameraPopout.popout ? createPortal(
+            <CameraStrip variant="popout" tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />,
+            cameraPopout.popout.document.body,
+          ) : <CameraStrip tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />}
           </div>
           <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
             {phase === "live" ? <>
@@ -3804,6 +3815,11 @@ export function HostPage({
           </div>
           {room ? <>
             <StageSelfControls host state={hostCameraState} notice={hostCameraNotice} media={stageMesh.media}
+              popout={{
+                available: cameraPopout.supported && stageMesh.tiles().length > 0,
+                active: !!cameraPopout.popout,
+                onToggle: () => void (cameraPopout.popout ? cameraPopout.close() : cameraPopout.open()),
+              }}
               onStart={() => void startHostCamera()} onStop={stopHostCamera}
               onCamera={(enabled) => stageMesh.setCamera(enabled)} onMicrophone={(enabled) => stageMesh.setMicrophone(enabled)} />
             <HostStagePanel requests={stageRequests} guests={stageGuests} labelFor={stagePeerLabel}
