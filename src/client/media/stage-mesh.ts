@@ -27,6 +27,14 @@ type Link = {
 };
 
 const RETRY_MS = 3000;
+// A link that has not connected by then lost a signal; the publisher re-offers.
+const CONNECT_TIMEOUT_MS = 15_000;
+
+type PendingOffer = {
+  connectionId: string;
+  description: RTCSessionDescriptionInit;
+  candidates: (SignalCandidate | null)[];
+};
 const CAMERA_MAX_BITRATE = 1_200_000;
 
 function candidateForSignal(candidate: RTCIceCandidate | null): SignalCandidate | null {
@@ -53,6 +61,9 @@ export class StageMesh {
   private local: MediaStream | null = null;
   private localMedia: StageMediaState = { camera: true, microphone: true };
   private links = new Map<string, Link>();
+  // Offers that arrive before the roster names their sender; a joiner can
+  // hear from a publisher before its own roster sync returns.
+  private pendingOffers = new Map<string, PendingOffer>();
   private retry: ReturnType<typeof setTimeout> | null = null;
   private snapshot: StageTile[] = [];
   private disposed = false;
@@ -72,6 +83,7 @@ export class StageMesh {
   setSelf(peerId: string | null): void {
     if (peerId === this.selfPeerId) return;
     this.closeLinks(() => true);
+    this.pendingOffers.clear();
     this.selfPeerId = peerId;
     this.reconcile();
   }
@@ -79,6 +91,12 @@ export class StageMesh {
   setRoster(publishers: readonly string[]): void {
     this.roster = [...publishers];
     this.reconcile();
+    for (const [peerId, pending] of [...this.pendingOffers]) {
+      if (!this.roster.includes(peerId)) continue;
+      this.pendingOffers.delete(peerId);
+      void this.acceptOffer(peerId, pending.connectionId, pending.description, pending.candidates)
+        .catch((error) => debugError("stage", "mesh-signal-failed", error, { kind: "description" }));
+    }
   }
 
   setParticipants(peerIds: Iterable<string>): void {
@@ -125,6 +143,7 @@ export class StageMesh {
 
   dispose(): void {
     this.disposed = true;
+    this.pendingOffers.clear();
     if (this.retry) clearTimeout(this.retry);
     this.retry = null;
     this.closeLinks(() => true);
@@ -136,13 +155,25 @@ export class StageMesh {
   async onSignal(fromPeerId: string, payload: SignalPayload): Promise<void> {
     try {
       if (payload.kind === "description" && payload.description.type === "offer") {
-        if (!this.roster.includes(fromPeerId) || fromPeerId === this.selfPeerId) return;
+        if (fromPeerId === this.selfPeerId) return;
+        if (!this.roster.includes(fromPeerId)) {
+          this.pendingOffers.set(fromPeerId, { connectionId: payload.connectionId,
+            description: payload.description, candidates: [] });
+          return;
+        }
+        this.pendingOffers.delete(fromPeerId);
         await this.acceptOffer(fromPeerId, payload.connectionId, payload.description);
         return;
       }
       const link = [...this.links.values()].find((item) =>
         item.peerId === fromPeerId && item.connectionId === payload.connectionId);
-      if (!link) return;
+      if (!link) {
+        const pending = this.pendingOffers.get(fromPeerId);
+        if (pending?.connectionId === payload.connectionId && payload.kind === "candidate") {
+          pending.candidates.push(payload.candidate);
+        }
+        return;
+      }
       if (payload.kind === "description") {
         if (link.direction === "out") await link.connection.setRemoteDescription(payload.description);
       } else {
@@ -157,6 +188,9 @@ export class StageMesh {
     if (this.disposed) return;
     const self = this.selfPeerId;
     const present = new Set([...this.participants].filter((peerId) => peerId !== self));
+    for (const peerId of [...this.pendingOffers.keys()]) {
+      if (!present.has(peerId)) this.pendingOffers.delete(peerId);
+    }
     // Receive from every present publisher; drop links that lost their reason.
     this.closeLinks((link) => link.direction === "in" &&
       (!this.roster.includes(link.peerId) || !present.has(link.peerId)));
@@ -238,6 +272,11 @@ export class StageMesh {
       if (this.links.get(`out:${peerId}`) !== link || !offer) return;
       this.options.send({ type: "stage-signal", targetPeerId: peerId,
         payload: { kind: "description", connectionId, description: { type: "offer", sdp: offer.sdp } } });
+      setTimeout(() => {
+        if (this.links.get(`out:${peerId}`) !== link || link.connected) return;
+        this.closeLinks((item) => item === link);
+        this.scheduleRetry();
+      }, CONNECT_TIMEOUT_MS);
     } catch (error) {
       debugError("stage", "mesh-offer-failed", error);
       this.closeLinks((item) => item === link);
@@ -245,7 +284,8 @@ export class StageMesh {
     }
   }
 
-  private async acceptOffer(peerId: string, connectionId: string, offer: RTCSessionDescriptionInit) {
+  private async acceptOffer(peerId: string, connectionId: string, offer: RTCSessionDescriptionInit,
+    candidates: (SignalCandidate | null)[] = []) {
     const link = this.newLink("in", peerId, connectionId);
     const { connection } = link;
     connection.ontrack = (event) => {
@@ -270,6 +310,7 @@ export class StageMesh {
     };
     this.changed();
     await connection.setRemoteDescription(offer);
+    for (const candidate of candidates) await connection.addIceCandidate(candidate ?? undefined);
     await connection.setLocalDescription();
     const answer = connection.localDescription;
     if (this.links.get(`in:${peerId}`) !== link || !answer) return;

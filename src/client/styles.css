@@ -2288,6 +2288,8 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
 }
 .lr-camera-strip.is-float.is-dragging { cursor: grabbing; transition: none; }
 .lr-camera-strip.is-float[data-corner^="top"] { top: max(var(--float-gap), env(safe-area-inset-top)); }
+/* Theater keeps the chat toggle in the top corner; tiles sit below it. */
+.lr-room.is-theater .lr-camera-strip.is-float[data-corner^="top"] { top: max(68px, env(safe-area-inset-top)); }
 .lr-camera-strip.is-float[data-corner^="bottom"] { bottom: max(72px, env(safe-area-inset-bottom)); }
 .lr-camera-strip.is-float[data-corner$="right"] { right: max(var(--float-gap), env(safe-area-inset-right)); }
 .lr-camera-strip.is-float[data-corner$="left"] { left: max(var(--float-gap), env(safe-area-inset-left)); }
