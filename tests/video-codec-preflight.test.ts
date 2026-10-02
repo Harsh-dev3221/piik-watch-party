@@ -59,6 +59,17 @@ describe("H264 sender preflight", () => {
     expect(h264ProbeSustainsTarget(baseline, current, 30)).toBe(false);
   });
 
+  it("accepts a hardware encoder whose probe source ran slow", () => {
+    const baseline = sample();
+    const busy = { timestamp: 2_000, framesEncoded: 22, sourceFrames: 22,
+      encodedFramesPerSecond: 12, sourceFramesPerSecond: 12 };
+
+    expect(h264ProbeSustainsTarget(baseline, sample({ ...busy, powerEfficient: true }), 30)).toBe(true);
+    expect(h264ProbeSustainsTarget(baseline, sample({ ...busy, powerEfficient: false }), 30)).toBe(false);
+    expect(h264ProbeSustainsTarget(baseline,
+      sample({ ...busy, powerEfficient: true, qualityLimitationReason: "cpu" }), 30)).toBe(false);
+  });
+
   it("waits for enough source progress before deciding", () => {
     const baseline = sample();
     const current = sample({

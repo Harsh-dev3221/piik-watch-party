@@ -36,6 +36,8 @@ export interface H264ProbeSample {
   encodedFramesPerSecond: number | null;
   sourceFramesPerSecond: number | null;
   qualityLimitationReason: string | null;
+  /** The browser's own report that a hardware encoder produced the frames. */
+  powerEfficient?: boolean | null;
 }
 
 type StatsRecord = RTCStats & Record<string, unknown>;
@@ -193,6 +195,7 @@ function readH264ProbeSample(report: RTCStatsReport): H264ProbeSample | null {
     encodedFramesPerSecond: finiteNumber(outbound.framesPerSecond),
     sourceFramesPerSecond: finiteNumber(source.framesPerSecond),
     qualityLimitationReason: stringValue(outbound.qualityLimitationReason),
+    powerEfficient: typeof outbound.powerEfficientEncoder === "boolean" ? outbound.powerEfficientEncoder : null,
   };
 }
 
@@ -216,6 +219,13 @@ export function h264ProbeSustainsTarget(
     current.qualityLimitationReason === "cpu"
   ) {
     return false;
+  }
+  // A hardware encoder is the cheapest choice. A probe frame count that falls
+  // short while the page is busy (a film playing beside the share) measures
+  // the canvas source, not the encoder, and would fall back to software VP8.
+  if (current.powerEfficient === true && current.framesEncoded !== null &&
+    baseline.framesEncoded !== null && current.framesEncoded > baseline.framesEncoded) {
+    return true;
   }
   const elapsedMs = current.timestamp - baseline.timestamp;
   if (elapsedMs < PREFLIGHT_MEASUREMENT_MS) {
