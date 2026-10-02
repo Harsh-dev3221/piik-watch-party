@@ -15,6 +15,35 @@
 </p>
 <p align="center">English · <a href="./README.zh-CN.md">简体中文</a></p>
 
+> [!NOTE]
+> **This is a watch-party fork of [TNTcraftHIM/Piik](https://github.com/TNTcraftHIM/Piik)**
+> (MIT). It is not affiliated with the upstream project; report problems with
+> the features below here. Everything else works and is documented as upstream.
+>
+> **What this fork adds**
+>
+> - **Cameras beside the shared screen.** The host and up to two friends (the
+>   host approves each request) send camera and voice to everyone in the room.
+>   Cameras travel over their own direct connections (H.264, 540p) and appear
+>   as tiles next to the shared screen, never burned into it.
+> - **Theater mode for the host**, like a streaming site: the shared screen
+>   fills the window on black, cameras and chat sit in a side column, and the
+>   control bar floats over the picture and fades when idle. Viewers keep
+>   their theater and fullscreen modes, with the cameras in a column.
+> - **A tidier host page**: room bar on top, the stage with one control bar,
+>   and a side column for cameras, friend requests and chat.
+> - **Phones**: in theater or fullscreen the cameras sit in the empty space
+>   beside or below the picture and can be dragged to the other side. On
+>   iPhone, add the site to the Home Screen for a full-screen app.
+> - **Pop-out cameras** in an always-on-top window (Chrome and Edge desktop).
+> - **Smoother playback**: hardware H.264 for cameras, the screen share keeps
+>   hardware H.264 when the encoder reports it, viewers hold a 300 ms jitter
+>   buffer, and the host preview keeps playing while another window has focus.
+>
+> Build the server image with
+> `docker build -f deploy/container/Dockerfile.genuinest -t piik-watch .`
+> and configure it as described in [Self-hosting](#self-hosting).
+
 Piik is a free, open-source screen sharing tool for games, movie nights,
 drawings and photos. Choose what to share and send an invitation. Your friends
 watch in their browsers.
