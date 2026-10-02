@@ -2317,7 +2317,10 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
   }
   /* Theater keeps its chat toggle in the top right corner. */
   .lr-room.is-theater .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner$="right"]) { --reserve-top: 64px; }
-  .lr-tv-screen:has(> .lr-camera-strip.is-float) > video { top: 0; bottom: 0; width: auto; height: 100%; }
+  /* A video ignores "right" when its width is auto: size it explicitly. */
+  .lr-tv-screen:has(> .lr-camera-strip.is-float) > video {
+    top: 0; bottom: 0; width: calc(100% - var(--tile-w) - 2 * var(--gap)); height: 100%;
+  }
   .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner$="left"]) > video { left: calc(var(--tile-w) + 2 * var(--gap)); right: 0; }
   .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner$="right"]) > video { left: 0; right: calc(var(--tile-w) + 2 * var(--gap)); }
   .lr-camera-strip.is-float {
