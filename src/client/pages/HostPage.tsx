@@ -30,6 +30,7 @@ import { SharingSettings } from "../components/living/SharingSettings";
 import { HostMicrophone, HostMicrophoneSettings } from "../components/living/HostMicrophone";
 import { RoomInteractions } from "../components/living/RoomInteractions";
 import { useTheaterMode } from "../components/living/use-theater-mode";
+import { usePlaybackControlsVisibility } from "../components/living/use-playback-controls-visibility";
 import { RoomChatOverlay } from "../components/living/RoomChatOverlay";
 import type { RoomInteractionSession } from "../lib/room-interactions";
 import { HostAudio } from "../media/host-audio";
@@ -398,6 +399,8 @@ export function HostPage({
   const shareGenerationRef = useRef<string | null>(null);
   const [phase, setPhase] = useState<HostPhase>("idle");
   const [theaterMode, setTheaterMode] = useTheaterMode();
+  // In theater the control bar floats over the picture and fades when idle.
+  const hostBarRef = useRef<HTMLDivElement>(null);
   const [signalStatus, setSignalStatus] =
     useState<SignalConnectionState>("offline");
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -558,6 +561,7 @@ export function HostPage({
   const [metricsExpanded, setMetricsExpanded] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hostBarHidden = usePlaybackControlsVisibility(videoRef, hostBarRef, !theaterMode);
   const streamRef = useRef<MediaStream | null>(null);
   const signalRef = useRef<SignalingClient | null>(null);
   const displayNameRef = useRef(displayName);
@@ -3883,7 +3887,7 @@ export function HostPage({
             ) : null}
           </StageTv>
           {/* One control bar: sharing, then the Host's own camera. */}
-          <div className="lr-host-bar lr-media-controls">
+          <div ref={hostBarRef} className={`lr-host-bar lr-media-controls${hostBarHidden ? " is-hidden" : ""}`}>
           <div className="lr-host-share-controls" role="group" aria-label={t("host.shareControls")}>
             {phase === "live" ? <>
               {/* On camera, the Host's voice already travels with the camera. */}
@@ -4287,7 +4291,8 @@ export function HostPage({
             </>}
           />
           </div>
-          <aside className="lr-host-side" aria-label={t("stage.title")}>
+          <aside className={`lr-host-side${stageMesh.tiles().length === 0 && stageRequests.length === 0 && stageGuests.length === 0 ? " is-empty" : ""}`}
+            aria-label={t("stage.title")}>
           {cameraPopout.popout ? createPortal(
             <CameraStrip variant="popout" tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />,
             cameraPopout.popout.document.body,
