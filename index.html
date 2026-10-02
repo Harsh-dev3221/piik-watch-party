@@ -6,6 +6,14 @@
     <meta name="theme-color" content="#141e29" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#e9f2ee" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Added to the Home Screen, Piik opens without the browser's bars:
+         the only full-screen page an iPhone allows. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Piik" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <title>Piik</title>
     <script>
       var systemTheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

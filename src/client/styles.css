@@ -2270,13 +2270,26 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
   .lr-camera-strip.is-overlay { top: auto; left: 0; width: auto; height: 24%; flex-direction: row; }
   .lr-camera-strip.is-overlay .lr-camera-tile { height: 100%; aspect-ratio: 4 / 3; }
 }
-/* Phones: the picture fills the screen and the cameras float over it as
-   small call tiles, draggable to any corner (bottom corners clear the
-   playback controls). */
+/* Phones (theater and fullscreen): the cameras take the empty space beside
+   the picture instead of covering it. Landscape puts a column on the left or
+   right, portrait a row above or below; dragging the tiles switches the side.
+   Sizes come from the screen box itself (a size container), so they follow
+   whatever area the browser leaves after its own bars. */
+.lr-tv-screen:has(> .lr-camera-strip.is-float),
+.lr-tv-screen:has(> .lr-playback):has(> .lr-camera-strip.is-float),
+.lr-tv-screen:has(> .lr-chat-overlay):has(> .lr-camera-strip.is-float) {
+  --tiles: 1;
+  --gap: 12px;
+  --reserve-top: 0px;
+  container: media-stage / size;
+}
+.lr-tv-screen:has(> .lr-camera-strip.is-float > .lr-camera-tile:nth-child(2)) { --tiles: 2; }
+.lr-tv-screen:has(> .lr-camera-strip.is-float > .lr-camera-tile:nth-child(3)) { --tiles: 3; }
+.lr-tv-screen:has(> .lr-camera-strip.is-float) > video { position: absolute; }
 .lr-camera-strip.is-float {
-  --float-gap: 12px;
   position: absolute;
   z-index: 3;
+  display: flex;
   flex: none;
   gap: 8px;
   width: auto;
@@ -2284,28 +2297,51 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 160ms ease-out;
 }
-.lr-camera-strip.is-float.is-dragging { cursor: grabbing; transition: none; }
-.lr-camera-strip.is-float[data-corner^="top"] { top: max(var(--float-gap), env(safe-area-inset-top)); }
-/* Theater keeps the chat toggle in the top corner; tiles sit below it. */
-.lr-room.is-theater .lr-camera-strip.is-float[data-corner^="top"] { top: max(68px, env(safe-area-inset-top)); }
-.lr-camera-strip.is-float[data-corner^="bottom"] { bottom: max(72px, env(safe-area-inset-bottom)); }
-.lr-camera-strip.is-float[data-corner$="right"] { right: max(var(--float-gap), env(safe-area-inset-right)); }
-.lr-camera-strip.is-float[data-corner$="left"] { left: max(var(--float-gap), env(safe-area-inset-left)); }
+.lr-camera-strip.is-float.is-dragging { z-index: 5; cursor: grabbing; }
 .lr-camera-strip.is-float .lr-camera-tile {
   flex: none;
-  width: min(27vw, 150px);
-  aspect-ratio: 3 / 4;
+  width: var(--tile-w);
+  height: var(--tile-h);
+  aspect-ratio: auto;
   border: 0;
   border-radius: 12px;
-  box-shadow: 0 4px 18px rgb(0 0 0 / .45);
 }
 .lr-camera-strip.is-float .lr-camera-tile figcaption { left: 6px; bottom: 6px; padding: 1px 6px; font-size: 11px; }
 .lr-camera-strip.is-float .lr-camera-tile-placeholder span { width: 40px; height: 40px; font-size: 18px; }
 @media (orientation: landscape) {
-  .lr-camera-strip.is-float .lr-camera-tile { width: auto; height: min(28vh, 150px); }
-  .lr-camera-strip.is-float[data-corner^="bottom"] { bottom: max(64px, env(safe-area-inset-bottom)); }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float) {
+    --tile-h: min(220px, 46cqh, calc((100cqh - var(--reserve-top) - 2 * var(--gap) - (var(--tiles) - 1) * 8px) / var(--tiles)));
+    --tile-w: calc(var(--tile-h) * 3 / 4);
+    --strip-h: calc(var(--tiles) * var(--tile-h) + (var(--tiles) - 1) * 8px);
+  }
+  /* Theater keeps its chat toggle in the top right corner. */
+  .lr-room.is-theater .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner$="right"]) { --reserve-top: 64px; }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float) > video { top: 0; bottom: 0; width: auto; height: 100%; }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner$="left"]) > video { left: calc(var(--tile-w) + 2 * var(--gap)); right: 0; }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner$="right"]) > video { left: 0; right: calc(var(--tile-w) + 2 * var(--gap)); }
+  .lr-camera-strip.is-float {
+    flex-direction: column;
+    top: calc(var(--reserve-top) + (100cqh - var(--reserve-top) - var(--strip-h)) / 2);
+  }
+  .lr-camera-strip.is-float[data-corner$="left"] { left: var(--gap); }
+  .lr-camera-strip.is-float[data-corner$="right"] { right: var(--gap); }
+}
+@media (orientation: portrait) {
+  .lr-tv-screen:has(> .lr-camera-strip.is-float) {
+    --tile-w: min(200px, 42cqw, calc((100cqw - 2 * var(--gap) - (var(--tiles) - 1) * 8px) / var(--tiles)));
+    --tile-h: calc(var(--tile-w) * 4 / 3);
+    --strip-w: calc(var(--tiles) * var(--tile-w) + (var(--tiles) - 1) * 8px);
+    /* A shared Mac screen is 16:10; the picture is centred with the tiles. */
+    --pic-h: min(calc(100cqw * 10 / 16), calc(100cqh - var(--tile-h) - 4 * var(--gap)));
+    --group-top: calc((100cqh - var(--pic-h) - var(--gap) - var(--tile-h)) / 2);
+  }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float) > video { left: 0; right: 0; width: 100%; height: var(--pic-h); }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner^="bottom"]) > video { top: var(--group-top); }
+  .lr-tv-screen:has(> .lr-camera-strip.is-float[data-corner^="top"]) > video { top: calc(var(--group-top) + var(--tile-h) + var(--gap)); }
+  .lr-camera-strip.is-float { flex-direction: row; left: calc((100cqw - var(--strip-w)) / 2); }
+  .lr-camera-strip.is-float[data-corner^="bottom"] { top: calc(var(--group-top) + var(--pic-h) + var(--gap)); }
+  .lr-camera-strip.is-float[data-corner^="top"] { top: var(--group-top); }
 }
 /* Pop-out window: the strip fills the floating window. */
 body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-family: var(--font); }

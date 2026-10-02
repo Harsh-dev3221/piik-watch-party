@@ -85,14 +85,16 @@ const DRAG_SLOP = 6;
 function readCorner(): Corner {
   try {
     const stored = localStorage.getItem(CORNER_KEY);
-    if (stored === "top-left" || stored === "bottom-right" || stored === "bottom-left") return stored;
+    if (stored === "top-left" || stored === "top-right" || stored === "bottom-right") return stored;
   } catch {
     // Storage may be unavailable; the default corner still works.
   }
-  return "top-right";
+  // Below the picture when upright, on the left when sideways: away from the
+  // chat toggle in the top right corner.
+  return "bottom-left";
 }
 
-/** Drag the floating strip anywhere; on release it settles in the nearest corner. */
+/** Drag the strip; on release it settles on the nearest side of the picture. */
 function useFloatingCorner() {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const start = useRef<{ x: number; y: number; id: number; moved: boolean } | null>(null);
