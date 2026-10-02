@@ -27,6 +27,7 @@ type Link = {
 };
 
 const RETRY_MS = 3000;
+const CAMERA_MAX_BITRATE = 1_200_000;
 
 function candidateForSignal(candidate: RTCIceCandidate | null): SignalCandidate | null {
   if (!candidate) return null;
@@ -89,7 +90,7 @@ export class StageMesh {
   async startLocal(): Promise<void> {
     if (this.local || this.disposed) return;
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "user" }, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24, max: 30 } },
+      video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     if (this.disposed) {
@@ -213,7 +214,21 @@ export class StageMesh {
     const connectionId = createOpaqueId();
     const link = this.newLink("out", peerId, connectionId);
     const { connection } = link;
-    for (const track of local.getTracks()) connection.addTransceiver(track, { direction: "sendonly", streams: [local] });
+    for (const track of local.getTracks()) {
+      // Faces at tile size: 720p within a bounded bitrate per receiver. Under
+      // pressure the browser lowers resolution first and keeps motion smooth.
+      connection.addTransceiver(track, {
+        direction: "sendonly",
+        streams: [local],
+        ...(track.kind === "video" ? { sendEncodings: [{ maxBitrate: CAMERA_MAX_BITRATE, maxFramerate: 30 }] } : {}),
+      });
+    }
+    for (const sender of connection.getSenders()) {
+      if (sender.track?.kind !== "video") continue;
+      const parameters = sender.getParameters();
+      parameters.degradationPreference = "maintain-framerate";
+      void sender.setParameters(parameters).catch(() => undefined);
+    }
     const channel = connection.createDataChannel("stage");
     link.channels.push(channel);
     channel.onopen = () => channel.send(JSON.stringify(this.localMedia));
