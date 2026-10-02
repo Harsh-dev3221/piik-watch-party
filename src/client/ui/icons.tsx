@@ -15,6 +15,7 @@ const PATHS = {
   smile: { body: (<><circle pathLength={1} cx="12" cy="12" r="9"/><path pathLength={1} d="M8 14c1 4 7 4 8 0M8 8.5v1M16 8.5v1"/></>) },
   send: { body: (<><path pathLength={1} d="m3 3 18 9-18 9 3-9-3-9ZM6 12h15"/></>) },
   camera: { body: (<><rect pathLength={1} x="2" y="6" width="14" height="12" rx="3"/><path pathLength={1} d="m16 10 6-3v10l-6-3"/></>) },
+  cameraOff: { body: (<><rect pathLength={1} x="2" y="6" width="14" height="12" rx="3"/><path pathLength={1} d="m16 10 6-3v10l-6-3M3 3l18 18"/></>) },
   microphone: { body: (<><rect pathLength={1} x="9" y="2" width="6" height="13" rx="3"/><path pathLength={1} d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></>) },
   microphoneOff: { body: (<><path pathLength={1} d="M9 5a3 3 0 0 1 6 0v5m0 4a3 3 0 0 1-6-2V9M5 10v2a7 7 0 0 0 12 5m2-5v-2M12 19v3m-4 0h8M3 3l18 18"/></>) },
   couch: { body: (<><path pathLength={1} d="M5 12V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v4M6 19v2m12-2v2"/><path pathLength={1} d="M5 15h14v-3a2 2 0 0 1 4 0v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-5a2 2 0 0 1 4 0Z"/></>) },

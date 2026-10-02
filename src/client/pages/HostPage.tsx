@@ -117,11 +117,15 @@ import {
 } from "../lib/signaling";
 import { labelParticipantSnapshot } from "../lib/viewer-presence";
 import {
-  CameraOverlayError,
   cameraOverlaySupported,
+  captureStageCamera,
   readBrowserCameraPreference,
+  readHostCameraLayout,
+  stageCompositorFor,
   writeBrowserCameraPreference,
+  writeHostCameraLayout,
 } from "../media/camera-overlay";
+import { StageLayoutEditor, useStageSlots } from "../components/living/StageLayoutEditor";
 import {
   applyCaptureProfile,
   captureBrowserSource,
@@ -401,6 +405,8 @@ export function HostPage({
   const [interactionSession, setInteractionSession] = useState<RoomInteractionSession | null>(null);
   const [microphoneVolume, setMicrophoneVolume] = useState(1);
   const [microphonePending, setMicrophonePending] = useState(false);
+  const [hostCameraPending, setHostCameraPending] = useState(false);
+  const hostCameraWantedRef = useRef(false);
   const [microphoneDevices, setMicrophoneDevices] = useState({ browser: "", native: "" });
   const [cameraDevice, setCameraDevice] = useState("");
   const loadMicrophones = useCallback(() => {
@@ -553,6 +559,14 @@ export function HostPage({
   const [metricsExpanded, setMetricsExpanded] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const attachVideo = useCallback((element: HTMLVideoElement | null) => {
+    videoRef.current = element;
+    setVideoElement(element);
+  }, []);
+  const stageCompositor = useMemo(() => stageCompositorFor(stream?.getVideoTracks()[0]), [stream]);
+  const stageSlots = useStageSlots(stageCompositor);
+  const hostCameraOn = stageSlots.some((slot) => slot.id === "host");
   const streamRef = useRef<MediaStream | null>(null);
   const signalRef = useRef<SignalingClient | null>(null);
   const displayNameRef = useRef(displayName);
@@ -2704,7 +2718,7 @@ export function HostPage({
       } else {
         // This must remain the first awaited operation in the button gesture.
         captured = await captureBrowserSource(qualitySettingsRef.current, selection.source ?? "browser",
-          selection.deviceId, selection.withCamera);
+          selection.deviceId);
       }
     } catch (error) {
       if (!isCurrentShare(generation, shareGeneration)) {
@@ -2731,6 +2745,8 @@ export function HostPage({
       streamRef.current = captured;
       setStream(captured);
       watchCaptureEnd(captured, generation);
+      hostCameraWantedRef.current = selection.kind === "browser" && !!selection.withCamera;
+      if (hostCameraWantedRef.current) void setHostCameraEnabled(true);
       if (selection.kind === "native") {
         setDetails(
           captureDetails(captured, true, nativeSourceAudioRef.current),
@@ -2931,7 +2947,7 @@ export function HostPage({
     let captured: MediaStream;
     try {
       // Like initial capture, changing source must begin in this button gesture.
-      captured = await captureBrowserSource(qualitySettingsRef.current, source, deviceId, withCamera);
+      captured = await captureBrowserSource(qualitySettingsRef.current, source, deviceId);
     } catch (error) {
       if (
         isCurrentGeneration(generation) &&
@@ -2959,6 +2975,8 @@ export function HostPage({
       if (source === "camera") setCameraDevice(deviceId);
       captured = hostAudioRef.current?.attach(captured, source) ?? captured;
       await replaceBrowserStream(captured, generation, token);
+      if (withCamera) hostCameraWantedRef.current = true;
+      if (hostCameraWantedRef.current) void setHostCameraEnabled(true);
     } catch (error) {
       if (isCurrentGeneration(generation)) setNoticeError(error, "source");
     } finally {
@@ -2966,15 +2984,43 @@ export function HostPage({
     }
   }
 
+  // The Host camera is one box in the screen compositor. Toggling it only adds
+  // or removes that box; the shared track and every route stay unchanged.
+  async function setHostCameraEnabled(enabled: boolean): Promise<void> {
+    const compositor = stageCompositorFor(streamRef.current?.getVideoTracks()[0]);
+    hostCameraWantedRef.current = enabled;
+    if (!compositor || !enabled) {
+      compositor?.removeSource("host");
+      return;
+    }
+    if (compositor.has("host")) return;
+    setHostCameraPending(true);
+    try {
+      const track = await captureStageCamera(cameraDevice);
+      if (!hostCameraWantedRef.current || !compositor.live ||
+          stageCompositorFor(streamRef.current?.getVideoTracks()[0]) !== compositor) {
+        track.stop();
+        return;
+      }
+      compositor.addSource("host", track, { owned: true, layout: readHostCameraLayout() });
+    } catch (error) {
+      hostCameraWantedRef.current = false;
+      debugError("capture", "host-camera-failed", error);
+      setNoticeValue({ kind: "key", key: error instanceof DOMException && error.name === "NotAllowedError"
+        ? "host.camera.denied" : "host.camera.unavailable", target: "operation", comic: "source-failed", tone: "warn" });
+    } finally {
+      setHostCameraPending(false);
+    }
+  }
+
   function setCaptureError(error: unknown, source: BrowserCaptureSource | undefined, action: "source" | "capture") {
     debugError("capture", "failed", error, { action, source });
     const target = action === "source" ? "operation" : "television";
-    const cameraError = error instanceof CameraOverlayError ? error.cause : source === "camera" ? error : undefined;
-    if (cameraError === undefined) {
+    if (source !== "camera") {
       setNoticeError(error, action, target);
       return;
     }
-    setNoticeValue({ kind: "key", key: cameraError instanceof DOMException && cameraError.name === "NotAllowedError"
+    setNoticeValue({ kind: "key", key: error instanceof DOMException && error.name === "NotAllowedError"
       ? "host.camera.denied" : "host.camera.unavailable", target, comic: "source-failed", tone: "warn" });
   }
 
@@ -3547,7 +3593,12 @@ export function HostPage({
               label={statusNotice ? noticeText ?? undefined : undefined} />}
           >
             {stream ? (
-              <video ref={videoRef} autoPlay muted playsInline />
+              <video ref={attachVideo} autoPlay muted playsInline />
+            ) : null}
+            {stageCompositor && phase === "live" && !nativeSources && !sharingPaused && !localPreviewPaused ? (
+              <StageLayoutEditor compositor={stageCompositor} video={videoElement} slots={stageSlots}
+                labelFor={(slot) => slot.id === "host" ? t("host.camera.you") : slot.label}
+                onCommit={(id, layout) => { if (id === "host") writeHostCameraLayout(layout); }} />
             ) : null}
             <RoomChatOverlay session={room ? interactionSession : null}
               visible={phase === "live" && !nativeSources && !sharingPaused && !switchingSource && !localPreviewPaused} />
@@ -3680,6 +3731,18 @@ export function HostPage({
                 unavailable={nativeActive && !nativeClientRef.current?.health.nativeMedia.microphone} paused={sharingPaused} disabled={switchingSource || changingQuality}
                 volume={microphoneVolume}
                 onToggle={() => void changeMicrophone(!microphoneEnabled, microphoneDevices[nativeActive ? "native" : "browser"])} />
+              {stageCompositor ? (
+                <Btn
+                  icon={hostCameraOn ? "camera" : "cameraOff"}
+                  cap="host.camera.label"
+                  title={hostCameraPending ? "host.camera.pending" : hostCameraOn ? "host.camera.hide" : "host.camera.show"}
+                  hint="hint-capture-camera"
+                  pressed={hostCameraOn}
+                  busy={hostCameraPending}
+                  disabled={hostCameraPending || sharingPaused || switchingSource || changingQuality}
+                  onClick={() => void setHostCameraEnabled(!hostCameraOn)}
+                />
+              ) : null}
               <Btn
                 icon={sharingPaused ? "play" : "pause"}
                 cap={sharingPaused ? "host.resume" : "host.pause"}

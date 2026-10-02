@@ -2183,3 +2183,41 @@ html[data-theme="dark"] .lr-tiles .lr-tile:not(.is-selected) small { color: #8ba
 }
 
 /* append-sink: workflow agents append new rules ABOVE this line. */
+
+/* Host-only handles for camera boxes drawn into a shared screen. */
+.lr-stage-layout { position: absolute; pointer-events: none; z-index: 2; }
+.lr-stage-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed color-mix(in srgb, var(--paper) 85%, transparent);
+  border-radius: 10px;
+  cursor: move;
+  pointer-events: auto;
+  touch-action: none;
+}
+.lr-stage-box:hover { border-color: var(--action); border-style: solid; }
+.lr-stage-box-label {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--stage) 75%, transparent);
+  color: #fff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lr-stage-box-resize {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--paper);
+  border-radius: 4px;
+  background: var(--action);
+  cursor: nwse-resize;
+}

@@ -12,7 +12,7 @@ import { displayMediaOptions } from "./audio-capture";
 import { browserDebugEnabled, debugError, debugOperation } from "../lib/debug";
 import { debugTrack } from "../lib/debug-webrtc";
 import { applySenderCaptureConstraints, senderCaptureTrack } from "./sender-video-track";
-import { CameraOverlayError, cameraOverlaySupported, composeCameraOverlay } from "./camera-overlay";
+import { cameraOverlaySupported, StageCompositor, stageScreenTrack } from "./camera-overlay";
 
 export type {
   DegradationPreference,
@@ -227,7 +227,6 @@ export async function captureBrowserSource(
   profile: QualityProfile,
   source: BrowserCaptureSource,
   deviceId = "",
-  withCamera = false,
 ): Promise<MediaStream> {
   if (source === "camera") {
     const resolution = QUALITY_RESOLUTIONS[profile.resolution];
@@ -236,18 +235,12 @@ export async function captureBrowserSource(
   }
   // The display picker must stay the first await in the button gesture.
   const screen = await captureDisplay(profile);
-  if (!withCamera || !cameraOverlaySupported()) return screen;
-  let camera: MediaStream;
+  if (!cameraOverlaySupported()) return screen;
+  // Screen shares always go through the compositor so camera boxes can be
+  // added, moved and removed later without replacing the shared track.
   try {
-    camera = await captureCamera(profile, { facingMode: { ideal: "user" } }, 640, 360);
+    return new StageCompositor(screen, profile.maxFramerate).stream;
   } catch (error) {
-    screen.getTracks().forEach((track) => track.stop());
-    throw new CameraOverlayError(error);
-  }
-  try {
-    return composeCameraOverlay(screen, camera, profile.maxFramerate);
-  } catch (error) {
-    camera.getTracks().forEach((track) => track.stop());
     debugError("capture", "camera-overlay-unavailable", error);
     return screen;
   }
@@ -288,6 +281,7 @@ export async function applyVideoCaptureProfile(
   track: MediaStreamTrack,
   profile: QualityProfile,
 ): Promise<void> {
+  track = stageScreenTrack(track);
   if (!videoTrackOwnsCaptureConstraints(track)) {
     return;
   }
@@ -303,7 +297,7 @@ export async function applyVideoCaptureProfile(
 }
 
 function videoTrackOwnsCaptureConstraints(track: MediaStreamTrack): boolean {
-  track = senderCaptureTrack(track);
+  track = senderCaptureTrack(stageScreenTrack(track));
   const capabilities = track.getCapabilities?.();
   return !capabilities ||
     "width" in capabilities ||
