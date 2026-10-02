@@ -1,0 +1,35 @@
+# Genuinest build of Piik: web UI and server from this checkout, same runtime
+# layout as the upstream image (deploy/container/Dockerfile).
+FROM node:24.19-bookworm AS node
+
+FROM golang:1.26-bookworm AS build
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund --ignore-scripts
+COPY . .
+ARG PIIK_VERSION=development
+ARG PIIK_REVISION=development
+RUN npm run build:web && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+      -ldflags "-s -w -X main.BuildRevision=${PIIK_REVISION} -X main.BuildVersion=${PIIK_VERSION}" \
+      -o /out/piik-server ./cmd/piik-server && \
+    printf '%s\n' "${PIIK_REVISION}" > /out/REVISION
+
+FROM gcr.io/distroless/static-debian13:nonroot-amd64@sha256:e754765ad9e167b0677b41c617fd44afb7b9818a477f48f17bda08e12cfb98cb
+ARG PIIK_VERSION=development
+LABEL org.opencontainers.image.title="Piik Server (Genuinest build)" \
+      org.opencontainers.image.version=$PIIK_VERSION \
+      org.opencontainers.image.licenses="MIT"
+WORKDIR /app
+COPY --from=build --chmod=0555 /out/piik-server /app/
+COPY --from=build --chmod=0444 /out/REVISION /app/
+COPY --chmod=0444 LICENSE /app/
+ENV LISTEN_HOST=0.0.0.0 PIIK_LOG_DIR=/home/nonroot/logs ROOM_DATABASE_PATH=/home/nonroot/rooms.sqlite
+USER 65532:65532
+EXPOSE 8787/tcp 3478/udp 3479/udp 3480/udp 7882/udp
+ENTRYPOINT ["/app/piik-server"]

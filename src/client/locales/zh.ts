@@ -104,6 +104,8 @@ export const zh = {
   "host.sourcePicker.title": "选择分享来源",
   "host.sourcePicker.browser": "浏览器选择器",
   "host.sourcePicker.browserHint": "在浏览器弹出的选择器中选择画面",
+  "host.sourcePicker.browserCamera": "显示我的摄像头",
+  "host.sourcePicker.browserCameraHint": "在共享画面的角落加入你的摄像头画面",
   "host.sourcePicker.camera": "分享摄像头：{title}",
   "host.camera.denied": "未获得摄像头权限，请在浏览器中允许访问后重试。",
   "host.camera.unavailable": "暂时无法使用摄像头，请检查连接，以及是否正被其他应用占用。",

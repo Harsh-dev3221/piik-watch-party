@@ -9,9 +9,10 @@ import {
 import { say, type CopyKey } from "../ui/copy";
 import type { MediaFailure } from "../ui/media-failure";
 import { displayMediaOptions } from "./audio-capture";
-import { browserDebugEnabled, debugOperation } from "../lib/debug";
+import { browserDebugEnabled, debugError, debugOperation } from "../lib/debug";
 import { debugTrack } from "../lib/debug-webrtc";
 import { applySenderCaptureConstraints, senderCaptureTrack } from "./sender-video-track";
+import { CameraOverlayError, cameraOverlaySupported, composeCameraOverlay } from "./camera-overlay";
 
 export type {
   DegradationPreference,
@@ -222,12 +223,45 @@ export async function captureDisplay(profile: QualityProfile): Promise<MediaStre
 
 export type BrowserCaptureSource = "browser" | "camera";
 
-export async function captureBrowserSource(profile: QualityProfile, source: BrowserCaptureSource, deviceId = ""): Promise<MediaStream> {
-  if (source !== "camera") return captureDisplay(profile);
-  const resolution = QUALITY_RESOLUTIONS[profile.resolution];
+export async function captureBrowserSource(
+  profile: QualityProfile,
+  source: BrowserCaptureSource,
+  deviceId = "",
+  withCamera = false,
+): Promise<MediaStream> {
+  if (source === "camera") {
+    const resolution = QUALITY_RESOLUTIONS[profile.resolution];
+    return captureCamera(profile, deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } },
+      resolution.width, resolution.height);
+  }
+  // The display picker must stay the first await in the button gesture.
+  const screen = await captureDisplay(profile);
+  if (!withCamera || !cameraOverlaySupported()) return screen;
+  let camera: MediaStream;
+  try {
+    camera = await captureCamera(profile, { facingMode: { ideal: "user" } }, 640, 360);
+  } catch (error) {
+    screen.getTracks().forEach((track) => track.stop());
+    throw new CameraOverlayError(error);
+  }
+  try {
+    return composeCameraOverlay(screen, camera, profile.maxFramerate);
+  } catch (error) {
+    camera.getTracks().forEach((track) => track.stop());
+    debugError("capture", "camera-overlay-unavailable", error);
+    return screen;
+  }
+}
+
+async function captureCamera(
+  profile: QualityProfile,
+  device: MediaTrackConstraints,
+  width: number,
+  height: number,
+): Promise<MediaStream> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-    ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
-    width: { ideal: resolution.width }, height: { ideal: resolution.height },
+    ...device,
+    width: { ideal: width }, height: { ideal: height },
     frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate },
   } });
   const track = stream.getVideoTracks()[0];

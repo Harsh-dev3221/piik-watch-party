@@ -12,6 +12,7 @@ import { NativeCompatibilityError } from "../src/client/native/client";
 import { NativeMediaBridgeError } from "../src/client/native/media-bridge";
 import { reconcileBoundedMediaChildren } from "../src/client/webrtc/media-assignment";
 import { debugError, debugEvent, debugOperation } from "../src/client/lib/debug";
+import { CameraOverlayError } from "../src/client/media/camera-overlay";
 import { hostActionErrorNotice, isCapturePermissionFailure } from "../src/client/pages/host-page-notices";
 
 // Exercise the actual page owners without mounting capture hardware or a Browser.
@@ -70,6 +71,7 @@ function fixture(launchedByClient = true) {
   const route = { updateProfile: vi.fn(async () => true), resyncAuthoritative: vi.fn(async (): Promise<void> => undefined) };
   const state = {
     debugError, debugEvent, debugOperation, NativeCompatibilityError, NativeMediaBridgeError, isCapturePermissionFailure, DOMException,
+    CameraOverlayError,
     launchedByClient, hostRoomSessionAvailable: false,
     NativeClient: { connect: vi.fn(async (): Promise<typeof client | null> => null) },
     nativeClientConnectRef: ref<Promise<typeof client | null> | null>(null),

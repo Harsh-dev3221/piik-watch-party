@@ -117,6 +117,12 @@ import {
 } from "../lib/signaling";
 import { labelParticipantSnapshot } from "../lib/viewer-presence";
 import {
+  CameraOverlayError,
+  cameraOverlaySupported,
+  readBrowserCameraPreference,
+  writeBrowserCameraPreference,
+} from "../media/camera-overlay";
+import {
   applyCaptureProfile,
   captureBrowserSource,
   type BrowserCaptureSource,
@@ -344,7 +350,7 @@ interface HostPageProps {
 }
 
 type ShareSourceSelection =
-  | { kind: "browser"; source?: BrowserCaptureSource; deviceId?: string }
+  | { kind: "browser"; source?: BrowserCaptureSource; deviceId?: string; withCamera?: boolean }
   | {
       kind: "native";
       client: NativeClient;
@@ -1488,9 +1494,9 @@ export function HostPage({
     void openCaptureSourcePicker();
   }
 
-  function startBrowserShareFromPicker(source: BrowserCaptureSource, deviceId = ""): void {
-    if (phase === "live") void switchSource(source, deviceId);
-    else void startSharing({ kind: "browser", source, deviceId });
+  function startBrowserShareFromPicker(source: BrowserCaptureSource, deviceId = "", withCamera = false): void {
+    if (phase === "live") void switchSource(source, deviceId, withCamera);
+    else void startSharing({ kind: "browser", source, deviceId, withCamera });
   }
 
   async function loadNativeSourcePreview(
@@ -2697,7 +2703,8 @@ export function HostPage({
         nativeStarted = true;
       } else {
         // This must remain the first awaited operation in the button gesture.
-        captured = await captureBrowserSource(qualitySettingsRef.current, selection.source ?? "browser", selection.deviceId);
+        captured = await captureBrowserSource(qualitySettingsRef.current, selection.source ?? "browser",
+          selection.deviceId, selection.withCamera);
       }
     } catch (error) {
       if (!isCurrentShare(generation, shareGeneration)) {
@@ -2895,7 +2902,7 @@ export function HostPage({
     }
   }
 
-  async function switchSource(source?: BrowserCaptureSource, deviceId = ""): Promise<void> {
+  async function switchSource(source?: BrowserCaptureSource, deviceId = "", withCamera = false): Promise<void> {
     const generation = activeGenerationRef.current;
     if (
       phase !== "live" ||
@@ -2924,7 +2931,7 @@ export function HostPage({
     let captured: MediaStream;
     try {
       // Like initial capture, changing source must begin in this button gesture.
-      captured = await captureBrowserSource(qualitySettingsRef.current, source, deviceId);
+      captured = await captureBrowserSource(qualitySettingsRef.current, source, deviceId, withCamera);
     } catch (error) {
       if (
         isCurrentGeneration(generation) &&
@@ -2962,11 +2969,12 @@ export function HostPage({
   function setCaptureError(error: unknown, source: BrowserCaptureSource | undefined, action: "source" | "capture") {
     debugError("capture", "failed", error, { action, source });
     const target = action === "source" ? "operation" : "television";
-    if (source !== "camera") {
+    const cameraError = error instanceof CameraOverlayError ? error.cause : source === "camera" ? error : undefined;
+    if (cameraError === undefined) {
       setNoticeError(error, action, target);
       return;
     }
-    setNoticeValue({ kind: "key", key: error instanceof DOMException && error.name === "NotAllowedError"
+    setNoticeValue({ kind: "key", key: cameraError instanceof DOMException && cameraError.name === "NotAllowedError"
       ? "host.camera.denied" : "host.camera.unavailable", target, comic: "source-failed", tone: "warn" });
   }
 
@@ -3546,7 +3554,12 @@ export function HostPage({
             {nativeSources ? (
               <CaptureSourcePicker
                 nativeSources={nativeSources}
-                onBrowser={() => startBrowserShareFromPicker("browser")}
+                onBrowser={withCamera => {
+                  writeBrowserCameraPreference(withCamera);
+                  startBrowserShareFromPicker("browser", "", withCamera);
+                }}
+                browserCameraAvailable={!nativeActive && !!navigator.mediaDevices?.getUserMedia && cameraOverlaySupported()}
+                initialBrowserCamera={readBrowserCameraPreference()}
                 onCamera={deviceId => startBrowserShareFromPicker("camera", deviceId)}
                 initialCamera={cameraDevice}
                 activeCameraVideo={hostAudioRef.current?.sourceKind === "camera" ? videoRef.current : null}

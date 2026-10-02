@@ -104,6 +104,8 @@ export const en: Record<CopyKey, string> = {
   "host.sourcePicker.title": "Choose what to share",
   "host.sourcePicker.browser": "Browser picker",
   "host.sourcePicker.browserHint": "Choose a source in your browser's capture picker",
+  "host.sourcePicker.browserCamera": "Show my camera",
+  "host.sourcePicker.browserCameraHint": "Adds your camera in the corner of the shared screen",
   "host.sourcePicker.camera": "Share camera: {title}",
   "host.camera.denied": "Camera access was not allowed. Allow it in your browser and try again.",
   "host.camera.unavailable": "The camera is unavailable. Check that it is connected and not in use by another app.",

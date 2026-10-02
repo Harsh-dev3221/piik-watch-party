@@ -45,6 +45,8 @@ export function CaptureSourcePicker({
   onRefresh,
   onCancel,
   browserAvailable = true,
+  browserCameraAvailable = false,
+  initialBrowserCamera = false,
   cameraAvailable = !!onCamera,
   initialTab = "window",
   initialCamera = "",
@@ -57,7 +59,7 @@ export function CaptureSourcePicker({
   selectionDisabled = false,
 }: {
   nativeSources: NativeSourceList;
-  onBrowser: () => void;
+  onBrowser: (withCamera: boolean) => void;
   onCamera?: (deviceId: string) => void;
   initialCamera?: string;
   activeCameraVideo?: HTMLVideoElement | null;
@@ -70,6 +72,8 @@ export function CaptureSourcePicker({
   onRefresh: () => void;
   onCancel: () => void;
   browserAvailable?: boolean;
+  browserCameraAvailable?: boolean;
+  initialBrowserCamera?: boolean;
   cameraAvailable?: boolean;
   initialTab?: SourceTab;
   initialAudio?: boolean;
@@ -84,6 +88,7 @@ export function CaptureSourcePicker({
   const [tab, setTab] = useState<SourceTab | null>(null);
   const [shareAudio, setShareAudio] = useState(initialAudio);
   const [showCaptureBorder, setShowCaptureBorder] = useState(initialShowCaptureBorder);
+  const [browserCamera, setBrowserCamera] = useState(initialBrowserCamera);
   const [excludeAudio, setExcludeAudio] = useState(initialExcludeAudio);
   const appDetected = nativeSources.kind === "ready" || nativeSources.kind === "failed" ||
     nativeSources.kind === "unsupported" || nativeSources.kind === "incompatible";
@@ -288,7 +293,7 @@ export function CaptureSourcePicker({
                 className="lr-source-option is-browser"
                 aria-label={t("host.sourcePicker.browser")}
                 disabled={selectionDisabled || !tabAvailable(activeTab)}
-                onClick={onBrowser}
+                onClick={() => onBrowser(browserCameraAvailable && browserCamera)}
               >
                 <span className="lr-source-option-icon" aria-hidden="true">
                   <Glyph name={SOURCE_ICONS[activeTab]} size={23} />
@@ -324,6 +329,26 @@ export function CaptureSourcePicker({
               : null}
           </div>
           </>}
+
+          {browserCapture && browserCameraAvailable ? (
+            <div className="lr-source-picker-options">
+              <div className="lr-source-picker-option">
+                <span aria-hidden="true"><Glyph name="camera" size={19} /></span>
+                {vis ? null : <span>{t("host.sourcePicker.browserCamera")}</span>}
+                <button
+                  type="button"
+                  className="lr-switch"
+                  role="switch"
+                  aria-checked={browserCamera}
+                  aria-label={t("host.sourcePicker.browserCamera")}
+                  aria-description={t("host.sourcePicker.browserCameraHint")}
+                  title={vis ? undefined : t("host.sourcePicker.browserCameraHint")}
+                  disabled={selectionDisabled}
+                  onClick={() => setBrowserCamera((current) => !current)}
+                />
+              </div>
+            </div>
+          ) : null}
 
           {nativeTab &&
           nativeSources.kind === "ready" &&
