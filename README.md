@@ -68,11 +68,18 @@ watch in their browsers.
 - **One program to host a site.** Web UI, room management and optional media forwarding are packaged together.
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/room-en-dark.png">
-    <img src="./docs/assets/room-en-light.png" width="860" alt="Piik room: a shared game, playback controls and friends on a sofa. The host wears a small gold crown.">
-  </picture><br>
-  <sub>Interface preview · Sample room with a generated game scene</sub>
+  <img src="./docs/watch-party/host-theater.png" width="860" alt="Host theater mode: the shared film fills the window, the host's and a friend's cameras sit in a side column, and the control bar floats over the picture."><br>
+  <sub>Host theater mode</sub>
+</p>
+<p align="center">
+  <img src="./docs/watch-party/host-page.png" width="860" alt="Host page: room bar on top, the shared film with one control bar, and the cameras, friend card and sofa in a side column."><br>
+  <sub>Host page</sub>
+</p>
+<p align="center">
+  <img src="./docs/watch-party/phone-portrait.png" width="200" alt="Phone fullscreen, upright: the film on top and both cameras below it.">
+  &nbsp;
+  <img src="./docs/watch-party/phone-landscape.png" width="433" alt="Phone fullscreen, sideways: both cameras in a column beside the film."><br>
+  <sub>Phone fullscreen · upright and sideways</sub>
 </p>
 
 ## Get started
