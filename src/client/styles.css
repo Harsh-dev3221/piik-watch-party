@@ -2355,6 +2355,50 @@ body.lr-camera-popout { margin: 0; padding: 8px; background: var(--stage); font-
   .lr-camera-strip.is-side .lr-camera-tile { flex: 0 0 min(44vw, 220px); }
 }
 
+/* Host theater: the live preview fills the window; cameras and the Host's
+   controls share a side column, video front and centre. */
+.lr-host-dock { display: contents; }
+.lr-room.is-host-theater .lr-scene {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(240px, 22vw, 340px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+}
+.lr-room.is-host-theater .lr-watch-party { display: contents; }
+.lr-room.is-host-theater .lr-watch-party > .lr-tv { grid-column: 1; grid-row: 1 / -1; min-height: 0; }
+/* Only the stage, the dock, the chat toggle and notices stay in theater. */
+.lr-room.is-host-theater .lr-scene > :not(.lr-watch-party, .lr-host-dock, .lr-room-interactions, .lr-stage-notices) { display: none; }
+.lr-room.is-host-theater .lr-camera-strip.is-side {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 72px 14px 4px;
+}
+.lr-room.is-host-theater .lr-host-dock {
+  display: flex;
+  grid-column: 2;
+  grid-row: 2;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60dvh;
+  overflow-y: auto;
+  padding: 10px 14px 16px;
+}
+.lr-room.is-host-theater .lr-host-dock > * { margin: 0; }
+.lr-room.is-host-theater .lr-host-share-controls { flex-wrap: wrap; justify-content: center; }
+/* Settings open in the page below the stage, which theater hides. */
+.lr-room.is-host-theater .lr-host-share-controls .lr-btn[aria-controls="host-advanced-door"] { display: none; }
+.lr-room.is-host-theater .lr-stage-notices { left: calc((100% - clamp(240px, 22vw, 340px)) / 2); }
+@media (max-width: 700px) {
+  .lr-room.is-host-theater .lr-scene { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
+  .lr-room.is-host-theater .lr-watch-party > .lr-tv { grid-row: 1; }
+  .lr-room.is-host-theater .lr-camera-strip.is-side { grid-column: 1; grid-row: 2; flex-direction: row; overflow-x: auto; padding: 8px 12px 0; }
+  .lr-room.is-host-theater .lr-camera-strip.is-side .lr-camera-tile { flex: 0 0 min(40vw, 180px); }
+  .lr-room.is-host-theater .lr-host-dock { grid-column: 1; grid-row: 3; max-height: 40dvh; }
+  .lr-room.is-host-theater .lr-stage-notices { left: 50%; }
+}
+
 /* Stage controls: own camera buttons and the Host's guest panel. */
 .lr-stage-self {
   display: flex;

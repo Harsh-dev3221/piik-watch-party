@@ -29,6 +29,7 @@ import type { CouchEntry } from "../components/living/Couch";
 import { SharingSettings } from "../components/living/SharingSettings";
 import { HostMicrophone, HostMicrophoneSettings } from "../components/living/HostMicrophone";
 import { RoomInteractions } from "../components/living/RoomInteractions";
+import { useTheaterMode } from "../components/living/use-theater-mode";
 import { RoomChatOverlay } from "../components/living/RoomChatOverlay";
 import type { RoomInteractionSession } from "../lib/room-interactions";
 import { HostAudio } from "../media/host-audio";
@@ -396,6 +397,7 @@ export function HostPage({
     useState<BrowserVideoCodec | null>(null);
   const shareGenerationRef = useRef<string | null>(null);
   const [phase, setPhase] = useState<HostPhase>("idle");
+  const [theaterMode, setTheaterMode] = useTheaterMode();
   const [signalStatus, setSignalStatus] =
     useState<SignalConnectionState>("offline");
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -680,6 +682,11 @@ export function HostPage({
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
+
+  // Theater shows the live preview; it ends with the share.
+  useEffect(() => {
+    if (phase !== "live") setTheaterMode(false);
+  }, [phase, setTheaterMode]);
 
   useEffect(() => {
     let senderQualitySuspended = false;
@@ -3608,7 +3615,7 @@ export function HostPage({
         }
       />
 
-      <main className="lr-room">
+      <main className={`lr-room${theaterMode ? " is-theater is-host-theater" : ""}`}>
         <h1 className="visually-hidden">
           {t("host.title", { name: hostPresence?.displayName ?? displayName })}
         </h1>
@@ -3751,6 +3758,8 @@ export function HostPage({
             cameraPopout.popout.document.body,
           ) : <CameraStrip tiles={stageMesh.tiles()} labelFor={(tile) => stagePeerLabel(tile.peerId)} />}
           </div>
+          {/* The dock is layout-neutral; theater moves it into the side column. */}
+          <div className="lr-host-dock">
           <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
             {phase === "live" ? <>
               <HostMicrophone enabled={microphoneEnabled} pending={microphonePending}
@@ -3774,6 +3783,14 @@ export function HostPage({
                 hint="hint-switch-source"
                 disabled={switchingSource || changingQuality || microphonePending}
                 onClick={() => void switchSource()}
+              />
+              <Btn
+                icon={theaterMode ? "theaterExit" : "theater"}
+                cap={theaterMode ? "viewer.theater.exit" : "viewer.theater"}
+                title={theaterMode ? "viewer.theater.exit" : "viewer.theater"}
+                hint={theaterMode ? "hint-theater-exit" : "hint-theater"}
+                pressed={theaterMode}
+                onClick={() => setTheaterMode((current) => !current)}
               />
             </> : null}
             <Btn
@@ -3830,6 +3847,7 @@ export function HostPage({
               }}
               onRemove={(peerId) => signalRef.current?.send({ type: "stage-remove", peerId })} />
           </> : null}
+          </div>
           <div className="lr-stage-notices" role="status" aria-live="polite">
             {details?.hasSourceAudio === false && stream ? (
               <Pill icon="speakerOff" label={t("host.noAudio")} comic="no-audio" tone="off" />
